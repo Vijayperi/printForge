@@ -3,18 +3,29 @@ import { describe, expect, it } from "vitest"
 import { axe } from "vitest-axe"
 
 import Home from "@/app/page"
+import { landingContent } from "@/src/config/content"
 
 describe("Home page", () => {
-  it("renders the hero headline and tagline", () => {
+  it("assembles every landing section in order", () => {
     render(<Home />)
-    expect(screen.getByText("PrintForge")).toBeInTheDocument()
-    expect(screen.getByText("Describe it. See it. We print it.")).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { level: 1, name: landingContent.hero.headline })
+    ).toBeInTheDocument()
+    const sectionIds = ["demo", "how-it-works", "examples", "materials", "faq"]
+    const found = sectionIds.map((id) => document.getElementById(id))
+    for (const el of found) expect(el).not.toBeNull()
+    // Document order matches the funnel order.
+    for (let i = 1; i < found.length; i += 1) {
+      const prev = found[i - 1] as HTMLElement
+      const curr = found[i] as HTMLElement
+      expect(prev.compareDocumentPosition(curr) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
   })
 
-  it("renders both calls to action as links", () => {
+  it("renders header and footer chrome", () => {
     render(<Home />)
-    expect(screen.getByRole("link", { name: "Start creating" })).toHaveAttribute("href", "/")
-    expect(screen.getByRole("link", { name: "See examples" })).toHaveAttribute("href", "/")
+    expect(screen.getByRole("banner")).toBeInTheDocument()
+    expect(screen.getByRole("contentinfo")).toBeInTheDocument()
   })
 
   it("has no accessibility violations", async () => {
