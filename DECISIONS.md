@@ -26,3 +26,11 @@ cannot render in jsdom (e.g. Select scroll buttons) while nothing uses them.
 S2 adds only what the landing page consumes (Accordion, Badge, Separator, plus
 existing Button/Input/Card); each later session adds and fully tests the
 components it introduces. No interface changes.
+
+## 2026-07-19 — S3: `**/*.spec-factory.ts` added to coverage exclusions
+
+Plan §4.4 names shared adapter contract suites `contract.spec-factory.ts`.
+They contain only vitest describe/it blocks — test code that happens to live
+beside the adapter so both mock and real implementations import it. Excluding
+them from coverage mirrors the existing `**/*.test.ts` exclusion; they are
+exercised on every test run, not product source.

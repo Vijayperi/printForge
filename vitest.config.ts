@@ -18,7 +18,7 @@ export default defineConfig({
       include: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}"],
       // Allowed exclusions per implementation plan §5.1 ONLY. Do not extend
       // this list without a DECISIONS.md entry.
-      exclude: ["**/*.d.ts", "**/*.test.{ts,tsx}", "app/layout.tsx"],
+      exclude: ["**/*.d.ts", "**/*.test.{ts,tsx}", "**/*.spec-factory.ts", "app/layout.tsx"],
       thresholds: {
         statements: 100,
         branches: 100,
