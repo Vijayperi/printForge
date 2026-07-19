@@ -9,9 +9,12 @@ export const ID_PREFIXES = [
   "qt",
   "ord",
   "pj",
+  "prn",
   "shp",
   "job",
   "ntf",
+  "evt",
+  "wh",
 ] as const
 
 export type IdPrefix = (typeof ID_PREFIXES)[number]
