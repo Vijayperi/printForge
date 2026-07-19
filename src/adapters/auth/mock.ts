@@ -73,6 +73,18 @@ export class MockAuthGateway implements AuthGateway {
     return ok(undefined)
   }
 
+  async updateName(name: string): Promise<Result<AuthUser>> {
+    if (this.currentUserId === null) {
+      return err(appError("unauthorized", "not signed in"))
+    }
+    if (name.trim().length === 0) {
+      return err(appError("validation", "name must not be empty"))
+    }
+    const user = [...this.users.values()].find((u) => u.userId === this.currentUserId) as MockUser
+    user.name = name.trim()
+    return ok(this.toPublic(user))
+  }
+
   async getUser(): Promise<Result<AuthUser | null>> {
     if (this.currentUserId === null) return ok(null)
     const user = [...this.users.values()].find((u) => u.userId === this.currentUserId) as MockUser

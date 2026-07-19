@@ -15,6 +15,8 @@ export interface AuthGateway {
   signOut(): Promise<Result<void>>
   requestPasswordReset(email: string): Promise<Result<void>>
   updatePassword(newPassword: string): Promise<Result<void>>
+  /** Update the signed-in user's display name. */
+  updateName(name: string): Promise<Result<AuthUser>>
   /** The currently signed-in user, or null when no session exists. */
   getUser(): Promise<Result<AuthUser | null>>
 }

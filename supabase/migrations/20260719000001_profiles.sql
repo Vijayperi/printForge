@@ -60,3 +60,10 @@ $$;
 create trigger profiles_touch_updated_at
   before update on public.profiles
   for each row execute function public.touch_updated_at();
+
+-- Table-level privileges. RLS policies above filter WHICH rows each role sees,
+-- but Postgres still requires base GRANTs for the role to touch the table at
+-- all. The authenticated role reads/updates its own row (rows restricted by
+-- RLS); service_role bypasses RLS for server-side administration.
+grant select, update on public.profiles to authenticated;
+grant all on public.profiles to service_role;

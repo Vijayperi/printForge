@@ -6,13 +6,21 @@ import { defineConfig } from "vitest/config"
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": path.resolve(__dirname) },
+    alias: {
+      "@": path.resolve(__dirname),
+      "server-only": path.resolve(__dirname, "tests/stubs/server-only.ts"),
+    },
   },
   test: {
     environment: "jsdom",
     setupFiles: ["./tests/setup.ts"],
     css: false,
-    include: ["app/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}", "tests/unit/**/*.test.{ts,tsx}"],
+    include: [
+      "app/**/*.test.{ts,tsx}",
+      "src/**/*.test.{ts,tsx}",
+      "tests/unit/**/*.test.{ts,tsx}",
+      "tests/integration/**/*.test.{ts,tsx}",
+    ],
     coverage: {
       provider: "v8",
       include: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}"],
