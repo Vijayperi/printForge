@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 
 import { getEnv } from "@/src/config/env"
+import type { Db } from "@/src/data/db"
 import { appError } from "@/src/lib/errors"
 
 export function supabaseConfigured(): boolean {
@@ -38,4 +39,14 @@ export async function createServerSupabase() {
       },
     },
   })
+}
+
+/**
+ * The request-scoped, cookie-bound database handle for route handlers and
+ * server components. Repositories accept this `Db`; the structural cast keeps
+ * the only Supabase dependency inside the data layer.
+ */
+export async function getRequestDb(): Promise<Db> {
+  const client = await createServerSupabase()
+  return client as unknown as Db
 }

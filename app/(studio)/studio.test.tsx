@@ -17,7 +17,6 @@ vi.mock("@/src/adapters/auth/factory", () => ({
 
 import StudioLayout from "@/app/(studio)/layout"
 import ProfilePage from "@/app/(studio)/profile/page"
-import ProjectsPage from "@/app/(studio)/projects/page"
 import { ok, err } from "@/src/lib/result"
 import { appError } from "@/src/lib/errors"
 
@@ -46,12 +45,7 @@ describe("StudioLayout", () => {
   })
 })
 
-describe("ProjectsPage", () => {
-  it("renders the placeholder", () => {
-    render(<ProjectsPage />)
-    expect(screen.getByRole("heading", { name: "My projects" })).toBeInTheDocument()
-  })
-})
+// ProjectsPage is covered by app/(studio)/projects/page.test.tsx.
 
 describe("ProfilePage", () => {
   it("redirects to login without a session", async () => {

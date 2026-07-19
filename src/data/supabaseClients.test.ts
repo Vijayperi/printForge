@@ -17,7 +17,7 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: (...args: unknown[]) => createServerClient(...(args as [])),
 }))
 
-import { createServerSupabase, supabaseConfigured } from "@/src/data/supabaseClients"
+import { createServerSupabase, getRequestDb, supabaseConfigured } from "@/src/data/supabaseClients"
 
 function configureEnv(): void {
   resetEnvCache()
@@ -40,6 +40,14 @@ describe("supabaseConfigured", () => {
   it("is true with url and anon key", () => {
     configureEnv()
     expect(supabaseConfigured()).toBe(true)
+  })
+})
+
+describe("getRequestDb", () => {
+  it("returns the cookie-bound client as a Db handle", async () => {
+    configureEnv()
+    const db = await getRequestDb()
+    expect(db).toEqual({ marker: "supabase-client" })
   })
 })
 

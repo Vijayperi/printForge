@@ -63,3 +63,25 @@ reauthentication_token) to '' — NULLs make GoTrue's Go scanner 500 on sign-in.
 runs via `E2E_SUPABASE=1 npm run e2e`. Both require the local Supabase stack and
 are skipped by default so `npm run verify` and the CI `e2e` job stay green
 without a Supabase service. CI gains a Supabase service later (owner task).
+
+## 2026-07-19 — S4: repository scope and the fakeDb harness
+
+Plan §6-S4 step 3 says "repositories for all tables." Built now: projects (full
+CRUD, reference), assets, design_versions, validation_reports,
+print_configurations, quotes, orders, shipments, notification_log, print_jobs,
+printers, audit_events, webhook_events — each with the narrow functions their
+consuming sessions need (insert + parent/owner-scoped reads + the status updates
+the state machines require). Deferred: the `jobs` table's repository (S5 owns the
+full JobQueue implementation on it) and `rate_limits` (S5/S16 rate limiter). All
+repos depend on a small `Db` abstraction (`src/data/db.ts`) plus helpers
+(insertReturning/selectWhere/maybeOneWhere/updateReturning); repository unit
+tests run against a PostgREST-shaped in-memory `tests/helpers/fakeDb.ts`
+(outside coverage globs — it is test infrastructure), integration/RLS tests run
+against local Supabase. This keeps repos free of `@supabase` (enforced by the
+new no-restricted-imports ESLint rule) and fully unit-testable without Docker.
+
+## 2026-07-19 — S4: id prefixes added (prn, evt, wh)
+
+The §4.1 prefix list lacked ids for printers, audit_events, and webhook_events.
+Added `prn`, `evt`, `wh` to ID_PREFIXES (ids.test.ts iterates the list, so they
+are covered automatically).
