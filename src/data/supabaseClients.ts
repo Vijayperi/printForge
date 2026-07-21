@@ -1,6 +1,7 @@
 import "server-only"
 
 import { createServerClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 
 import { getEnv } from "@/src/config/env"
@@ -48,5 +49,24 @@ export async function createServerSupabase() {
  */
 export async function getRequestDb(): Promise<Db> {
   const client = await createServerSupabase()
+  return client as unknown as Db
+}
+
+/**
+ * A service-role database handle for background workers and privileged server
+ * flows. It bypasses RLS, so it is never request-bound and must never be reached
+ * from client code. Used by the job worker and generation handlers.
+ */
+export function getServiceDb(): Db {
+  const env = getEnv()
+  if (env.NEXT_PUBLIC_SUPABASE_URL === undefined || env.SUPABASE_SERVICE_ROLE_KEY === undefined) {
+    throw appError(
+      "internal",
+      "service database is not configured; check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
+    )
+  }
+  const client = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
   return client as unknown as Db
 }

@@ -66,6 +66,21 @@ export function updateGenerationStatus(
   return updateReturning<DesignVersionRow>(db, TABLE, { generation_status: status }, [["id", id]])
 }
 
+/** Record the provider task id and move the generation status in one write. */
+export function setProviderTask(
+  db: Db,
+  id: string,
+  providerTaskId: string,
+  status: string
+): Promise<Result<DesignVersionRow>> {
+  return updateReturning<DesignVersionRow>(
+    db,
+    TABLE,
+    { provider_task_id: providerTaskId, generation_status: status },
+    [["id", id]]
+  )
+}
+
 export function attachAssets(
   db: Db,
   id: string,

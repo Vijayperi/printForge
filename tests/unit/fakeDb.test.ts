@@ -90,6 +90,14 @@ describe("FakeDb", () => {
     expect(ok.error).toBeNull()
   })
 
+  it("failCall fails only the nth terminal op", async () => {
+    const db = createFakeDb({ t: { rows: [{ id: "a", n: 1 }] } })
+    db.failCall(2, { message: "second fails" })
+    expect((await db.from<Row>("t").select()).error).toBeNull() // op 1 ok
+    expect((await db.from<Row>("t").select()).error?.message).toBe("second fails") // op 2 fails
+    expect((await db.from<Row>("t").select()).error).toBeNull() // op 3 ok
+  })
+
   it("ensure creates a table only once", () => {
     const db = createFakeDb()
     db.ensure("t")

@@ -85,3 +85,38 @@ new no-restricted-imports ESLint rule) and fully unit-testable without Docker.
 The §4.1 prefix list lacked ids for printers, audit_events, and webhook_events.
 Added `prn`, `evt`, `wh` to ID_PREFIXES (ids.test.ts iterates the list, so they
 are covered automatically).
+
+## 2026-07-22 — S5: queue atomicity via SQL functions + `Db.rpc`
+
+PostgREST cannot express FOR UPDATE SKIP LOCKED, the stale-lock reaper, an
+atomic fixed-window rate limiter, or a multi-statement transactional outbox.
+S5 adds four SQL functions (`claim_next_job`, `reap_stale_jobs`,
+`bump_rate_limit`, `enqueue_generation`) in migration
+`20260722000001_job_queue.sql` and extends the `Db` interface with `rpc()`
+(fakeDb gets a handler-based `rpc` + `failCall(n)` for multi-op failure tests).
+`PostgresJobQueue` uses the builder for enqueue/complete/fail/heartbeat and RPCs
+for the atomic claim/reap; backoff math is a pure module. `getServiceDb()`
+(service-role, bypasses RLS) is added for the worker. The queue's real
+concurrency/dedup is proven by integration tests; unit coverage uses fakeDb +
+mocked rpc.
+
+## 2026-07-22 — S5: design_versions immutability relaxed to user content only
+
+S4's trigger froze a design_version entirely once `generation_status='ready'`,
+which would block S7's asset ingestion (asset ids are attached after ready) and
+S5's need to record `provider_task_id` after the provider accepts. Migration
+`20260722000001` replaces the trigger to freeze only USER CONTENT
+(project_id, source, version_no, prompt, brief_json, created_at) — FR-2's real
+intent — while generation-process fields (generation_status, provider_task_id,
+asset ids) evolve as generation runs. Verified live.
+
+## 2026-07-22 — S5: generation lifecycle & outbox
+
+The generation route calls `enqueue_generation` (SECURITY DEFINER, re-checks
+ownership) to insert the design_version shell + generation.submit job in ONE
+transaction (outbox). Handlers are dependency-injected (db/queue/provider/clock)
+for unit testing; the worker (`src/jobs/worker.ts`) wires them and is bootstrapped
+by `scripts/worker.ts` (excluded from coverage; run via `npm run dev:worker`).
+Poll jobs re-enqueue themselves with an incrementing pollCount key until the
+provider reaches a terminal state; ready hands off `asset.ingest` (S7). tsx added
+for the worker runtime; eslint now allows `_`-prefixed unused args.

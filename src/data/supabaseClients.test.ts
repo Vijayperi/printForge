@@ -17,7 +17,17 @@ vi.mock("@supabase/ssr", () => ({
   createServerClient: (...args: unknown[]) => createServerClient(...(args as [])),
 }))
 
-import { createServerSupabase, getRequestDb, supabaseConfigured } from "@/src/data/supabaseClients"
+const createClient = vi.fn(() => ({ marker: "service-client" }))
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: (...args: unknown[]) => createClient(...(args as [])),
+}))
+
+import {
+  createServerSupabase,
+  getRequestDb,
+  getServiceDb,
+  supabaseConfigured,
+} from "@/src/data/supabaseClients"
 
 function configureEnv(): void {
   resetEnvCache()
@@ -48,6 +58,30 @@ describe("getRequestDb", () => {
     configureEnv()
     const db = await getRequestDb()
     expect(db).toEqual({ marker: "supabase-client" })
+  })
+})
+
+describe("getServiceDb", () => {
+  it("throws an AppError when the service key is missing", () => {
+    configureEnv() // url + anon only, no service role key
+    expect(() => getServiceDb()).toThrow(AppError)
+  })
+
+  it("builds a service-role client that bypasses RLS", () => {
+    resetEnvCache()
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://local.supabase.test")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key")
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-key")
+    const db = getServiceDb()
+    expect(db).toEqual({ marker: "service-client" })
+    const [url, key, opts] = createClient.mock.calls[0] as unknown as [
+      string,
+      string,
+      { auth: { persistSession: boolean; autoRefreshToken: boolean } },
+    ]
+    expect(url).toBe("https://local.supabase.test")
+    expect(key).toBe("service-key")
+    expect(opts.auth.persistSession).toBe(false)
   })
 })
 

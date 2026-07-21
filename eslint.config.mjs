@@ -41,6 +41,17 @@ const eslintConfig = defineConfig([
     files: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}"],
     ignores: ["src/data/**"],
   },
+  {
+    name: "printforge/unused-vars",
+    files: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}", "scripts/**/*.ts", "tests/**/*.{ts,tsx}"],
+    rules: {
+      // Allow intentionally-unused args/vars prefixed with underscore.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

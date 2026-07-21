@@ -35,6 +35,12 @@ export interface TableBuilder<Row> {
 
 export interface Db {
   from<Row = Record<string, unknown>>(table: string): TableBuilder<Row>
+  rpc<T = unknown>(fn: string, args?: Record<string, unknown>): PromiseLike<DbResponse<T>>
+}
+
+/** Map a raw db error into an AppError (exported for callers outside helpers). */
+export function dbErrorToAppError(error: DbError) {
+  return toAppError(error)
 }
 
 function toAppError(error: DbError) {

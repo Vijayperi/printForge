@@ -60,6 +60,7 @@ describe("insertReturning", () => {
         ({
           insert: () => ({ select: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }),
         }) as never,
+      rpc: <T,>() => Promise.resolve({ data: null as T, error: null }),
     }
     const result = await insertReturning<TRow>(stub, "things", {} as TRow)
     expect(!result.ok && result.error.code).toBe("internal")

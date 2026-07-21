@@ -12,7 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "verify": "npm run typecheck && npm run lint && npm run test:coverage && npm run build",
-    "dev:worker": "echo \"worker loop arrives in Session 5\"",
+    "dev:worker": "node --env-file=.env.local --import tsx scripts/worker.ts",
     "test:integration": "SUPABASE_INTEGRATION=1 vitest run tests/integration"
   },
   "dependencies": {
@@ -50,6 +50,7 @@
     "msw": "^2.15.0",
     "prettier": "^3.9.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5",
     "vitest": "^4.1.10",
     "vitest-axe": "^0.1.0"

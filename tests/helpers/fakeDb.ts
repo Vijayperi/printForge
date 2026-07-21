@@ -19,9 +19,12 @@ interface TableState {
  * db.ts helpers use: insert().select().single(), select().eq().order().limit(),
  * select().eq().maybeSingle(), update().eq().select().single(), delete().eq().
  */
+export type RpcHandler = (args: Record<string, unknown>) => DbResponse<unknown>
+
 export class FakeDb implements Db {
   private tables = new Map<string, TableState>()
   private pendingError: DbError | null = null
+  private rpcHandlers = new Map<string, RpcHandler>()
 
   constructor(config?: Record<string, { rows?: Row[]; unique?: string[] }>) {
     if (config !== undefined) {
@@ -51,12 +54,29 @@ export class FakeDb implements Db {
     return (this.tables.get(table)?.rows ?? []).map((r) => ({ ...r }))
   }
 
+  private opCount = 0
+  private scheduledFailures = new Map<number, DbError>()
+
   /** Make the next terminal operation resolve with this error, then clear. */
   failNext(error: DbError): void {
     this.pendingError = error
   }
 
+  /**
+   * Fail the Nth terminal operation (1-based across all from()/rpc() calls),
+   * letting earlier ones succeed. Useful for multi-step flows.
+   */
+  failCall(callIndex: number, error: DbError): void {
+    this.scheduledFailures.set(callIndex, error)
+  }
+
   private takeError(): DbError | null {
+    this.opCount += 1
+    const scheduled = this.scheduledFailures.get(this.opCount)
+    if (scheduled !== undefined) {
+      this.scheduledFailures.delete(this.opCount)
+      return scheduled
+    }
     const e = this.pendingError
     this.pendingError = null
     return e
@@ -65,6 +85,21 @@ export class FakeDb implements Db {
   from<R = Row>(table: string): TableBuilder<R> {
     this.ensure(table)
     return new FakeBuilder<R>(this.tables.get(table) as TableState, () => this.takeError()) as unknown as TableBuilder<R>
+  }
+
+  /** Register a handler for `rpc(name, args)`. */
+  onRpc(name: string, handler: RpcHandler): void {
+    this.rpcHandlers.set(name, handler)
+  }
+
+  rpc<T = unknown>(fn: string, args: Record<string, unknown> = {}): PromiseLike<DbResponse<T>> {
+    const error = this.takeError()
+    if (error !== null) return Promise.resolve({ data: null as T, error })
+    const handler = this.rpcHandlers.get(fn)
+    if (handler === undefined) {
+      return Promise.resolve({ data: null as T, error: { message: `no rpc handler for ${fn}` } })
+    }
+    return Promise.resolve(handler(args) as DbResponse<T>)
   }
 }
 

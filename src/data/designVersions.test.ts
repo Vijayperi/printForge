@@ -6,6 +6,7 @@ import {
   getDesignVersion,
   listDesignVersionsByProject,
   nextVersionNo,
+  setProviderTask,
   updateGenerationStatus,
 } from "@/src/data/designVersions"
 import { isId } from "@/src/lib/ids"
@@ -125,6 +126,20 @@ describe("updateGenerationStatus", () => {
   it("fails when the version does not exist", async () => {
     const result = await updateGenerationStatus(db(), "dv_missing", "creating")
     expect(!result.ok && result.error.code).toBe("not_found")
+  })
+})
+
+describe("setProviderTask", () => {
+  it("records the provider task id and status together", async () => {
+    const fake = db([
+      { id: "dv_1", project_id: "proj_1", source: "generated", version_no: 1, generation_status: "queued" },
+    ])
+    const result = await setProviderTask(fake, "dv_1", "task_abc", "creating")
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.provider_task_id).toBe("task_abc")
+      expect(result.value.generation_status).toBe("creating")
+    }
   })
 })
 
