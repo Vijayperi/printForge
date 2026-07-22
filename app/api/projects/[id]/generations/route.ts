@@ -50,6 +50,8 @@ export async function POST(
   if (moderation.value.verdict === "deny") {
     return jsonError(appError("validation", "This request violates our content policy."))
   }
+  // A flagged prompt is still allowed but marked so ops can review it (S14).
+  const flagged = moderation.value.verdict === "flag"
 
   const rate = await checkRateLimit(db, new SystemClock(), {
     key: `generation:${userId}`,
@@ -68,7 +70,7 @@ export async function POST(
     {
       p_project_id: projectId,
       p_prompt: brief.rawPrompt,
-      p_brief: brief,
+      p_brief: flagged ? { ...brief, flagged: true } : brief,
       p_idempotency_key: newId("job"),
     }
   )

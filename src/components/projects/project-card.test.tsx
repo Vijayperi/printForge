@@ -22,9 +22,9 @@ function project(overrides: Partial<ProjectRow> = {}): ProjectRow {
 }
 
 describe("ProjectCard", () => {
-  it("renders the title and an active status badge", () => {
+  it("renders the title linking to the project, and an active status badge", () => {
     render(<ProjectCard project={project()} renameAction={idle} archiveAction={idle} />)
-    expect(screen.getByText("Desk tidy")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Desk tidy" })).toHaveAttribute("href", "/projects/proj_1")
     expect(screen.getByText("active")).toBeInTheDocument()
   })
 

@@ -1,0 +1,87 @@
+import { render, screen } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { afterEach, describe, expect, it, vi } from "vitest"
+
+import type { StructuredBrief } from "@/src/domain/types"
+
+const refresh = vi.fn()
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }))
+
+vi.mock("@/src/viewer/ViewerWorkspace", () => ({
+  ViewerWorkspace: (props: { url: string }) => <div data-testid="viewer" data-url={props.url} />,
+}))
+
+vi.mock("@/src/components/studio/creation-panel", () => ({
+  CreationPanel: (props: { initialBrief: StructuredBrief | null; onGenerated: () => void }) => (
+    <div data-testid="creation-panel" data-prompt={props.initialBrief?.rawPrompt ?? ""}>
+      <button type="button" onClick={props.onGenerated}>
+        fire-generated
+      </button>
+    </div>
+  ),
+}))
+
+import { CreatorWorkspace } from "@/src/components/studio/creator-workspace"
+import { designVersion } from "@/tests/helpers/designVersion"
+
+const project = { id: "proj_1", user_id: "u1", title: "Desk Tidy", status: "active" as const, created_at: "1", updated_at: "1" }
+
+afterEach(() => vi.clearAllMocks())
+
+describe("CreatorWorkspace", () => {
+  it("defaults to the newest ready version and shows it in the viewer", () => {
+    const versions = [
+      designVersion({ id: "dv_2", version_no: 2, generation_status: "creating" }),
+      designVersion({ id: "dv_1", version_no: 1, generation_status: "ready", glb_asset_id: "ast_g" }),
+    ]
+    render(<CreatorWorkspace project={project} versions={versions} />)
+    expect(screen.getByTestId("viewer")).toHaveAttribute("data-url", "/api/assets/ast_g")
+  })
+
+  it("selecting a version swaps what the viewer shows", async () => {
+    const user = userEvent.setup()
+    const versions = [
+      designVersion({ id: "dv_2", version_no: 2, generation_status: "creating" }),
+      designVersion({ id: "dv_1", version_no: 1, generation_status: "ready", glb_asset_id: "ast_g" }),
+    ]
+    render(<CreatorWorkspace project={project} versions={versions} />)
+    expect(screen.getByTestId("viewer")).toBeInTheDocument()
+    // Click the still-generating version (identified by its status badge).
+    await user.click(screen.getByText("creating").closest("button") as HTMLElement)
+    // The generating placeholder replaces the viewer.
+    expect(screen.getByText("Generating…")).toBeInTheDocument()
+    expect(screen.queryByTestId("viewer")).not.toBeInTheDocument()
+  })
+
+  it("refines the form from the selected version's brief", async () => {
+    const user = userEvent.setup()
+    const versions = [designVersion({ id: "dv_1", generation_status: "ready", glb_asset_id: "ast_g" })]
+    render(<CreatorWorkspace project={project} versions={versions} />)
+    expect(screen.getByTestId("creation-panel")).toHaveAttribute("data-prompt", "")
+    await user.click(screen.getByRole("button", { name: "Refine selected" }))
+    expect(screen.getByTestId("creation-panel")).toHaveAttribute("data-prompt", "a friendly dinosaur")
+  })
+
+  it("refreshes when a generation completes", async () => {
+    const user = userEvent.setup()
+    render(<CreatorWorkspace project={project} versions={[designVersion({ generation_status: "ready", glb_asset_id: "ast_g" })]} />)
+    await user.click(screen.getByRole("button", { name: "fire-generated" }))
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it("shows the empty state and no refine button without versions", () => {
+    render(<CreatorWorkspace project={project} versions={[]} />)
+    expect(screen.getByText("No model yet")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Refine selected" })).not.toBeInTheDocument()
+  })
+
+  it("hides refine when the selected version has no brief", () => {
+    render(
+      <CreatorWorkspace
+        project={project}
+        versions={[designVersion({ brief_json: null, generation_status: "ready", glb_asset_id: "ast_g" })]}
+      />
+    )
+    expect(screen.queryByRole("button", { name: "Refine selected" })).not.toBeInTheDocument()
+  })
+})

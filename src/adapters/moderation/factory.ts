@@ -1,9 +1,10 @@
 import "server-only"
 
 import type { Moderator } from "@/src/adapters/moderation"
-import { MockModerator } from "@/src/adapters/moderation/mock"
+import { WordlistModerator } from "@/src/adapters/moderation/wordlist"
+import { denyTerms, flagTerms } from "@/src/config/moderation"
 
-/** Resolve the moderator. Only the mock exists until S7 adds the real one. */
+/** Resolve the moderator. Wordlist-backed prompt moderation (PRD §14). */
 export function getModerator(): Moderator {
-  return new MockModerator()
+  return new WordlistModerator({ denyTerms, flagTerms })
 }

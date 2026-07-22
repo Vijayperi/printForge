@@ -26,6 +26,7 @@ import {
   createServerSupabase,
   getRequestDb,
   getServiceDb,
+  getServiceStorageClient,
   supabaseConfigured,
 } from "@/src/data/supabaseClients"
 
@@ -82,6 +83,24 @@ describe("getServiceDb", () => {
     expect(url).toBe("https://local.supabase.test")
     expect(key).toBe("service-key")
     expect(opts.auth.persistSession).toBe(false)
+  })
+})
+
+describe("getServiceStorageClient", () => {
+  it("throws an AppError when the service key is missing", () => {
+    configureEnv() // url + anon only, no service role key
+    expect(() => getServiceStorageClient()).toThrow(AppError)
+  })
+
+  it("builds a service-role storage client", () => {
+    resetEnvCache()
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://local.supabase.test")
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key")
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-key")
+    expect(getServiceStorageClient()).toEqual({ marker: "service-client" })
+    const [url, key] = createClient.mock.calls[0] as unknown as [string, string]
+    expect(url).toBe("https://local.supabase.test")
+    expect(key).toBe("service-key")
   })
 })
 

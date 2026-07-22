@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import { getModerator } from "@/src/adapters/moderation/factory"
-import { MockModerator } from "@/src/adapters/moderation/mock"
+import { WordlistModerator } from "@/src/adapters/moderation/wordlist"
 
 describe("getModerator", () => {
-  it("returns the mock moderator", () => {
-    expect(getModerator()).toBeInstanceOf(MockModerator)
+  it("returns the wordlist moderator", () => {
+    expect(getModerator()).toBeInstanceOf(WordlistModerator)
   })
 })

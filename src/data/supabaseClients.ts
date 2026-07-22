@@ -70,3 +70,21 @@ export function getServiceDb(): Db {
   })
   return client as unknown as Db
 }
+
+/**
+ * A service-role Supabase client for private object storage (worker + server
+ * routes). Like getServiceDb it bypasses RLS and must never reach client code.
+ * The caller casts it to the narrow storage-client shape it needs.
+ */
+export function getServiceStorageClient() {
+  const env = getEnv()
+  if (env.NEXT_PUBLIC_SUPABASE_URL === undefined || env.SUPABASE_SERVICE_ROLE_KEY === undefined) {
+    throw appError(
+      "internal",
+      "service storage is not configured; check NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY"
+    )
+  }
+  return createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+}

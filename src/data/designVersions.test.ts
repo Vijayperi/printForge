@@ -5,6 +5,7 @@ import {
   createDesignVersion,
   getDesignVersion,
   listDesignVersionsByProject,
+  getDesignVersionByAssetId,
   nextVersionNo,
   setProviderTask,
   updateGenerationStatus,
@@ -76,6 +77,38 @@ describe("getDesignVersion", () => {
   it("returns null when not found", async () => {
     const result = await getDesignVersion(db(), "dv_missing")
     expect(result.ok && result.value).toBeNull()
+  })
+})
+
+describe("getDesignVersionByAssetId", () => {
+  it("matches on the glb asset id", async () => {
+    const fake = db([{ id: "dv_1", project_id: "p", glb_asset_id: "ast_g" }])
+    const result = await getDesignVersionByAssetId(fake, "ast_g")
+    expect(result.ok && result.value?.id).toBe("dv_1")
+  })
+
+  it("matches on the stl asset id when glb does not", async () => {
+    const fake = db([{ id: "dv_1", project_id: "p", glb_asset_id: null, stl_asset_id: "ast_s" }])
+    const result = await getDesignVersionByAssetId(fake, "ast_s")
+    expect(result.ok && result.value?.id).toBe("dv_1")
+  })
+
+  it("matches on the thumbnail asset id when others do not", async () => {
+    const fake = db([{ id: "dv_1", project_id: "p", glb_asset_id: null, stl_asset_id: null, thumbnail_asset_id: "ast_t" }])
+    const result = await getDesignVersionByAssetId(fake, "ast_t")
+    expect(result.ok && result.value?.id).toBe("dv_1")
+  })
+
+  it("returns null when no version references the asset", async () => {
+    const result = await getDesignVersionByAssetId(db(), "ast_missing")
+    expect(result.ok && result.value).toBeNull()
+  })
+
+  it("propagates a query error", async () => {
+    const fake = db()
+    fake.failNext({ message: "boom" })
+    const result = await getDesignVersionByAssetId(fake, "ast_x")
+    expect(!result.ok && result.error.code).toBe("provider_error")
   })
 })
 

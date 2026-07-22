@@ -145,3 +145,34 @@ DemoSlot lazy-loads the workspace via `next/dynamic` (ssr:false) gated by an
 IntersectionObserver, keeping three.js out of the initial bundle. The controls
 subagent used an accessible toggle-button group (not shadcn Tabs) for the mode
 switch and a role=group (not <dl>) for dimensions to satisfy axe.
+
+## 2026-07-23 — S7: asset pipeline, moderation, creator workspace
+
+- AssetStorage: interface + InMemory (unit/dev) + SupabaseStorage (private
+  `models`/`thumbnails` buckets, migration 20260722000002) behind a factory that
+  switches on Supabase env. Assets are staff-only under RLS; served to owners via
+  `GET /api/assets/[id]` which verifies ownership through an RLS-scoped
+  design_version query, then redirects to a short-lived signed URL fetched with
+  the service client. `asset.ingest` handler (DI) copies the provider GLB into
+  storage, derives STL + thumbnail (MockGlbConverter — real conversion is
+  owner-era), attaches all three; idempotent; added to the worker HANDLED_TYPES.
+  No provider URL is ever persisted — only storage keys.
+- Worker runtime: `scripts/worker.ts` must run with
+  `node --conditions=react-server` so the `server-only` package resolves to its
+  safe module in a plain Node process (dev:worker script updated).
+- Moderation: WordlistModerator (deny→400, flag→allowed but brief marked
+  `flagged`) replaces the allow-all mock in the factory; lists in
+  `src/config/moderation.ts` (OWNER DECISION REQUIRED). MockModerator kept as a
+  covered test double.
+- Creator workspace `(studio)/projects/[projectId]`: server page + client
+  workspace (viewer-first on mobile), creation panel (POST generation + interval
+  polling of GET /api/generations — interval-callback setState, not
+  setState-in-effect), version history, and the S6 ViewerWorkspace embedded via
+  `/api/assets/{glbId}`. Selection is DERIVED from the current versions (falls
+  back to newest ready) so a freshly-ingested model shows after router.refresh
+  without a setState-in-effect. Durability uses a native <select> (Radix Select's
+  portal/scroll-buttons can't cover under jsdom). ProjectCard now links its title
+  to the project detail page.
+- Proven live: `tests/integration/assetIngest.test.ts` (real bucket ingest +
+  idempotency) and `tests/e2e/creator.spec.ts` (full sign-up→prompt→generate→
+  ingest→viewer golden path, ~27s with the worker running).

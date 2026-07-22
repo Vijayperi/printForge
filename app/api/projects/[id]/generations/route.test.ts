@@ -102,6 +102,18 @@ describe("POST generations", () => {
     expect(await res.json()).toEqual({ designVersionId: "dv_1" })
   })
 
+  it("202 and marks the brief flagged when moderation flags the prompt", async () => {
+    check.mockResolvedValue(ok({ verdict: "flag", category: "knife" }))
+    let captured: Record<string, unknown> = {}
+    db.onRpc("enqueue_generation", (args) => {
+      captured = args
+      return { data: [{ design_version_id: "dv_1", job_id: "job_1" }], error: null }
+    })
+    const res = await POST(post(validBody), ctx)
+    expect(res.status).toBe(202)
+    expect((captured["p_brief"] as Record<string, unknown>)["flagged"]).toBe(true)
+  })
+
   it("502 when the enqueue rpc errors", async () => {
     db.onRpc("enqueue_generation", () => ({ data: null, error: { message: "enqueue boom" } }))
     expect((await POST(post(validBody), ctx)).status).toBe(502)

@@ -9,7 +9,7 @@ import {
 } from "@/src/data/db"
 import type { DesignSource, DesignVersionRow, StructuredBrief } from "@/src/domain/types"
 import { newId } from "@/src/lib/ids"
-import { mapResult, type Result } from "@/src/lib/result"
+import { mapResult, ok, type Result } from "@/src/lib/result"
 
 const TABLE = "design_versions"
 
@@ -39,6 +39,24 @@ export function createDesignVersion(
 
 export function getDesignVersion(db: Db, id: string): Promise<Result<DesignVersionRow | null>> {
   return maybeOneWhere<DesignVersionRow>(db, TABLE, [["id", id]])
+}
+
+/**
+ * The design version referencing an asset id in any of its asset columns, or
+ * null. Under a request (RLS) client this returns a row only when the caller
+ * owns it — the ownership check for serving private assets.
+ */
+export async function getDesignVersionByAssetId(
+  db: Db,
+  assetId: string
+): Promise<Result<DesignVersionRow | null>> {
+  const columns = ["glb_asset_id", "stl_asset_id", "thumbnail_asset_id"] as const
+  for (const column of columns) {
+    const found = await maybeOneWhere<DesignVersionRow>(db, TABLE, [[column, assetId]])
+    if (!found.ok) return found
+    if (found.value !== null) return ok(found.value)
+  }
+  return ok(null)
 }
 
 export function listDesignVersionsByProject(

@@ -17,11 +17,7 @@ describe("InMemoryStorage extras", () => {
   })
 
   it("maps a network failure to provider_error", async () => {
-    server.use(
-      http.get("https://provider.test/boom.glb", () => {
-        throw new Error("network down")
-      })
-    )
+    server.use(http.get("https://provider.test/boom.glb", () => HttpResponse.error()))
     const result = await new InMemoryStorage().ingestFromUrl("https://provider.test/boom.glb", {
       keyPrefix: "models/dv",
       expectedMime: "model/gltf-binary",

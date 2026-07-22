@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState, useTransition } from "react"
 
 import type { ProjectFormState } from "@/app/(studio)/projects/actions"
@@ -71,12 +72,16 @@ export function ProjectCard({
     <Card data-testid="project-card">
       <CardHeader>
         <CardTitle className="flex items-center justify-between gap-2">
-          <span>{project.title}</span>
+          <Link href={`/projects/${project.id}`} className="hover:underline">
+            {project.title}
+          </Link>
           <Badge variant={isArchived ? "outline" : "secondary"}>{project.status}</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="text-sm text-muted-foreground">
-        Open this project to generate and configure a model.
+        <Link href={`/projects/${project.id}`} className="hover:text-foreground">
+          Open this project to generate and configure a model.
+        </Link>
       </CardContent>
       <CardFooter className="gap-2">
         <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
