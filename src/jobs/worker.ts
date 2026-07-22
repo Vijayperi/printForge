@@ -1,20 +1,26 @@
 import "server-only"
 
+import type { GlbConverter } from "@/src/adapters/conversion"
+import type { AssetStorage } from "@/src/adapters/storage"
 import {
   handleGenerationPoll,
   handleGenerationSubmit,
   type GenerationDeps,
 } from "@/src/jobs/handlers/generation"
+import { handleAssetIngest } from "@/src/jobs/handlers/ingestion"
 import type { ClaimedJob, JobType } from "@/src/jobs/queue"
 import { appError, type ErrorCode } from "@/src/lib/errors"
 import { err, type Result } from "@/src/lib/result"
 
 export interface WorkerDeps extends GenerationDeps {
   workerId: string
+  storage: AssetStorage
+  converter: GlbConverter
+  appUrl: string
 }
 
 /** Job types this worker claims and can dispatch. */
-export const HANDLED_TYPES: JobType[] = ["generation.submit", "generation.poll"]
+export const HANDLED_TYPES: JobType[] = ["generation.submit", "generation.poll", "asset.ingest"]
 
 const PERMANENT_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   "validation",
@@ -29,12 +35,17 @@ export function retryableFromError(error: { code: ErrorCode }): boolean {
 }
 
 /** Route a claimed job to its handler. */
-export function dispatch(deps: GenerationDeps, job: ClaimedJob): Promise<Result<void>> {
+export function dispatch(deps: WorkerDeps, job: ClaimedJob): Promise<Result<void>> {
   switch (job.type) {
     case "generation.submit":
       return handleGenerationSubmit(deps, job.payload)
     case "generation.poll":
       return handleGenerationPoll(deps, job.payload)
+    case "asset.ingest":
+      return handleAssetIngest(
+        { db: deps.db, storage: deps.storage, converter: deps.converter, appUrl: deps.appUrl },
+        job.payload
+      )
     default:
       return Promise.resolve(err(appError("not_found", `no handler for job type ${job.type}`)))
   }

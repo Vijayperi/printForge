@@ -7,6 +7,9 @@
  *   node --env-file=.env.local --import tsx scripts/worker.ts
  */
 import { getGenerationProvider } from "@/src/adapters/generation/factory"
+import { getGlbConverter } from "@/src/adapters/conversion/factory"
+import { getAssetStorage } from "@/src/adapters/storage/factory"
+import { getEnv } from "@/src/config/env"
 import { getServiceDb } from "@/src/data/supabaseClients"
 import { PostgresJobQueue } from "@/src/jobs/queue"
 import { runLoop, type WorkerDeps } from "@/src/jobs/worker"
@@ -24,6 +27,9 @@ async function main(): Promise<void> {
     provider: getGenerationProvider(),
     clock,
     workerId: newId("job"),
+    storage: getAssetStorage(),
+    converter: getGlbConverter(),
+    appUrl: getEnv().APP_URL,
   }
 
   let running = true

@@ -13,6 +13,8 @@ import { MockGenerationProvider } from "@/src/adapters/generation/mock"
 import type { Db } from "@/src/data/db"
 import { PostgresJobQueue } from "@/src/jobs/queue"
 import { runOnce, type WorkerDeps } from "@/src/jobs/worker"
+import { InMemoryStorage } from "@/src/adapters/storage/memory"
+import { MockGlbConverter } from "@/src/adapters/conversion/mock"
 import { FixedClock } from "@/src/lib/clock"
 
 const RUN = process.env["SUPABASE_INTEGRATION"] === "1"
@@ -72,6 +74,9 @@ describe.skipIf(!RUN)("generation flow (Supabase)", () => {
       provider: new MockGenerationProvider({ pollsUntilReady: 2 }),
       clock,
       workerId: `test-worker-${tag}`,
+      storage: new InMemoryStorage(),
+      converter: new MockGlbConverter(),
+      appUrl: "http://localhost:3000",
     }
 
     let status = "queued"

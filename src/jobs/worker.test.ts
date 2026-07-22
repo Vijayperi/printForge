@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
 
 import type { GenerationProvider, GenerationStatus } from "@/src/adapters/generation"
+import { MockGlbConverter } from "@/src/adapters/conversion/mock"
+import { InMemoryStorage } from "@/src/adapters/storage/memory"
 import type { ClaimedJob, JobQueue } from "@/src/jobs/queue"
 import {
   dispatch,
@@ -47,6 +49,9 @@ function makeDeps(over: { queue?: JobQueue; provider?: GenerationProvider; rows?
     provider: over.provider ?? stubProvider(),
     clock: new FixedClock(NOW),
     workerId: "w1",
+    storage: new InMemoryStorage(),
+    converter: new MockGlbConverter(),
+    appUrl: "http://localhost:3000",
   }
 }
 
@@ -86,8 +91,14 @@ describe("dispatch", () => {
     expect(!result.ok && result.error.code).toBe("validation")
   })
 
-  it("has no handler for other job types", async () => {
-    const result = await dispatch(makeDeps(), claimed({ type: "asset.ingest", payload: {} }))
+  it("routes asset.ingest to its handler", async () => {
+    // No design version seeded → the handler reaches a not_found for that dv.
+    const result = await dispatch(makeDeps(), claimed({ type: "asset.ingest", payload: { designVersionId: "dv_x", glbUrl: "/x.glb" } }))
+    expect(!result.ok && result.error.code).toBe("not_found")
+  })
+
+  it("has no handler for unregistered job types", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "validation.run", payload: {} }))
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 })
