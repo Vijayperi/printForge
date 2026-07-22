@@ -120,3 +120,28 @@ by `scripts/worker.ts` (excluded from coverage; run via `npm run dev:worker`).
 Poll jobs re-enqueue themselves with an incrementing pollCount key until the
 provider reaches a terminal state; ready hands off `asset.ingest` (S7). tsx added
 for the worker runtime; eslint now allows `_`-prefixed unused args.
+
+## 2026-07-22 — S6: 3D viewer structure & the coverage boundary
+
+R3F renders to WebGL, which jsdom lacks. To keep 100% coverage honest:
+- All viewer logic is pure and unit-tested (`src/viewer/logic/*`, plus
+  `sceneStats`/`sceneClone`/`orbitReset`/`download`/`fullscreen` in canvas/).
+- Thin R3F wrappers (MeshOverlays, GLBModel, OrbitRig, Lighting, ViewerScene)
+  are tested with `@react-three/test-renderer` (no real WebGL). Note: R3F-
+  intrinsic-created objects (lights) fail `instanceof` against the test's three
+  import, so those specs match on the node `.type` string instead.
+- `src/viewer/canvas/ModelViewer.tsx` is the ONLY coverage-excluded viewer file
+  (added to vitest exclude): it hosts the raw `<Canvas>` and cannot run under
+  jsdom. Its children are covered; Playwright (`tests/e2e/viewer.spec.ts`)
+  drives the real canvas and asserts `data-viewer-mode`.
+- `ViewerWorkspace` (the container) is covered by mocking ModelViewer.
+
+Other S6 choices: lighting uses explicit lights (no drei `Environment`/HDR) to
+stay self-contained (no CDN/CSP dependency). Wireframe/swatch modes render
+CLONED materials so the loaded scene is never mutated. The bundled sample
+`public/samples/cube.glb` was generated with three's GLTFExporter (a FileReader
+polyfill is needed in Node — see the one-off script approach). The landing
+DemoSlot lazy-loads the workspace via `next/dynamic` (ssr:false) gated by an
+IntersectionObserver, keeping three.js out of the initial bundle. The controls
+subagent used an accessible toggle-button group (not shadcn Tabs) for the mode
+switch and a role=group (not <dl>) for dimensions to satisfy axe.

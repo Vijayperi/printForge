@@ -26,7 +26,15 @@ export default defineConfig({
       include: ["app/**/*.{ts,tsx}", "src/**/*.{ts,tsx}"],
       // Allowed exclusions per implementation plan §5.1 ONLY. Do not extend
       // this list without a DECISIONS.md entry.
-      exclude: ["**/*.d.ts", "**/*.test.{ts,tsx}", "**/*.spec-factory.ts", "app/layout.tsx"],
+      exclude: [
+        "**/*.d.ts",
+        "**/*.test.{ts,tsx}",
+        "**/*.spec-factory.ts",
+        "app/layout.tsx",
+        // The raw WebGL <Canvas> host cannot run under jsdom (plan §5.1/§5.4);
+        // its logic lives in covered children + Playwright drives the real one.
+        "src/viewer/canvas/ModelViewer.tsx",
+      ],
       thresholds: {
         statements: 100,
         branches: 100,
