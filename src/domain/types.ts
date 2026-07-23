@@ -45,6 +45,12 @@ export interface Measurements {
   surfaceAreaCm2: number
   triangleCount: number
   componentCount: number
+  /**
+   * Volume fraction (0..1) of the smallest connected component; 1 for a single
+   * body. Drives the S10 `multiple_components` verdict split (a tiny stray shard
+   * → manual_review). Added in S10 (Measurements grows across sessions).
+   */
+  smallestComponentVolumeFraction: number
 }
 
 export interface StructuredBrief {

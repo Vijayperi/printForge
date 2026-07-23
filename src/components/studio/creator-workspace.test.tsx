@@ -31,6 +31,12 @@ vi.mock("@/src/components/studio/stl-upload", () => ({
   ),
 }))
 
+vi.mock("@/src/components/studio/printability-panel", () => ({
+  PrintabilityPanel: (props: { designVersionId: string }) => (
+    <div data-testid="printability-panel" data-dv={props.designVersionId} />
+  ),
+}))
+
 import { CreatorWorkspace } from "@/src/components/studio/creator-workspace"
 import { designVersion } from "@/tests/helpers/designVersion"
 
@@ -46,6 +52,8 @@ describe("CreatorWorkspace", () => {
     ]
     render(<CreatorWorkspace project={project} versions={versions} />)
     expect(screen.getByTestId("viewer")).toHaveAttribute("data-url", "/api/assets/ast_g")
+    // The printability panel tracks the selected version.
+    expect(screen.getByTestId("printability-panel")).toHaveAttribute("data-dv", "dv_1")
   })
 
   it("selecting a version swaps what the viewer shows", async () => {

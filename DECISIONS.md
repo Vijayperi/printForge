@@ -251,3 +251,48 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   Docker/Supabase were down. It is env-gated (`SUPABASE_INTEGRATION=1`) and mirrors the
   known-good `assetIngest` integration setup; run it with `supabase start` +
   `npm run test:integration`.
+
+## 2026-07-24 — S10: printability reports, profiles, report UI
+
+- **`buildReport` signature returns `{ verdict, findings }`, not `{ …, explanations }`.**
+  Plain-language copy is a display concern and lives in `content.ts`
+  (`printabilityContent`), keyed by finding kind + verdict, and rendered by the
+  PrintabilityPanel. The domain stays copy-free. buildReport computes the two
+  scale/profile-derived findings itself (`exceeds_build_volume`, `below_min_wall`)
+  and applies the decision table with strict precedence fail > manual_review >
+  warning > pass. Every rule + numeric boundary is covered in `report.test.ts`.
+- **`boundary_holes` verdict split keys on the finding's `count`** (= total
+  boundary edge count, per the S9 decision): > 100 → fail, ≤ 100 → manual_review.
+- **`multiple_components` split needs per-component volume**, so `Measurements`
+  gained `smallestComponentVolumeFraction` (0..1; 1 for a single body). Computed in
+  `components.ts` (per-root signed-volume accumulation) and threaded through
+  `measure`/`analyze`. `< 5%` → manual_review, else warning.
+- **Overhang is a print-orientation heuristic, kept OUT of `analyzeGeometry`.** A
+  separate `analyzeOverhang(mesh)` (merged in by the validation handler) flags
+  `unsupported_overhang` when downward faces steeper than 55° from vertical exceed
+  15% of the surface — excluding faces resting on the base plane (they carry the
+  first layer, not an overhang). Keeping it out of the S9 mesh-validity engine means
+  the sphere/torus fixtures stay "clean" and unchanged.
+- **`unstable_base` and `trapped_volume` are handled by the verdict mapping but not
+  yet emitted by the engine** (base-contact-area and internal-cavity detection are
+  owner-era). The decision table + tests cover them via injected findings, so the
+  pipeline is complete and future-proof.
+- **The verdict is persisted directly as the report status** (Verdict ⊆ terminal
+  ValidationState); a fresh report is an initial-state assignment, not a transition.
+  `validationMachine` governs the later REVALIDATE / OPERATOR_* transitions (S14+).
+  `manual_review` additionally writes a system-actor `audit_events` flag and enqueues
+  an idempotent `notification.send(ops_manual_review)` (handler is S16 — the job sits
+  pending until then).
+- **Moderation-flagged → manual_review is deferred.** buildReport keeps the plan's
+  `(findings, measurements, profile, material, scaleFactor)` signature; the brief's
+  moderation flag isn't currently persisted on the design version, so wiring it into
+  the verdict is left to a later session.
+- **PrintabilityPanel** polls `GET /api/design-versions/[id]/validation` via a
+  self-rescheduling `setTimeout` (reschedules only while pending; a `key` on the
+  component resets it between versions, so the effect never calls setState
+  synchronously — the react-hooks lint rule). Verdict badge is icon + text (never
+  colour alone). `SCALE_FACTOR = 1` / empty scale hash are placeholders until S11
+  threads real configuration scale into the payload.
+- **`tests/e2e/validation.spec.ts` is written but UNRUN this session** (Docker/
+  Supabase down). Gated on `E2E_SUPABASE=1` + a running worker; covers clean→pass,
+  holed→manual_review, oversized→fail.

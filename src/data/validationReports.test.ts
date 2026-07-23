@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   findValidationReport,
+  getLatestValidationReport,
   upsertValidationReport,
   type ReportKey,
 } from "@/src/data/validationReports"
@@ -17,6 +18,7 @@ const MEASUREMENTS: Measurements = {
   surfaceAreaCm2: 6,
   triangleCount: 12,
   componentCount: 1,
+  smallestComponentVolumeFraction: 1,
 }
 
 const FINDINGS: Finding[] = [{ kind: "boundary_holes", severity: "warning", detail: "x", count: 4 }]
@@ -37,6 +39,23 @@ describe("findValidationReport", () => {
 
   it("returns null when no report matches", async () => {
     const result = await findValidationReport(db(), KEY)
+    expect(result.ok && result.value).toBeNull()
+  })
+})
+
+describe("getLatestValidationReport", () => {
+  it("returns the newest report for a design version", async () => {
+    const fake = db([
+      { id: "vr_old", design_version_id: "dv_1", created_at: "2026-01-01" },
+      { id: "vr_new", design_version_id: "dv_1", created_at: "2026-02-01" },
+      { id: "vr_other", design_version_id: "dv_2", created_at: "2026-03-01" },
+    ])
+    const result = await getLatestValidationReport(fake, "dv_1")
+    expect(result.ok && result.value?.id).toBe("vr_new")
+  })
+
+  it("returns null when a design version has no reports", async () => {
+    const result = await getLatestValidationReport(db(), "dv_x")
     expect(result.ok && result.value).toBeNull()
   })
 })

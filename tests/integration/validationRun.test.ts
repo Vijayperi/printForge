@@ -12,6 +12,8 @@ import { describe, expect, it } from "vitest"
 import { SupabaseStorage, type MinimalStorageClient } from "@/src/adapters/storage/supabase"
 import type { Db } from "@/src/data/db"
 import { handleValidationRun } from "@/src/jobs/handlers/validation"
+import { PostgresJobQueue } from "@/src/jobs/queue"
+import { SystemClock } from "@/src/lib/clock"
 import { binaryStl, box } from "@/tests/helpers/geometry"
 
 const RUN = process.env["SUPABASE_INTEGRATION"] === "1"
@@ -58,7 +60,7 @@ describe.skipIf(!RUN)("validation.run against Supabase", () => {
       stl_asset_id: stlAssetId,
     })
 
-    const first = await handleValidationRun({ db, storage }, { designVersionId: dvId })
+    const first = await handleValidationRun({ db, storage, queue: new PostgresJobQueue(db, new SystemClock()) }, { designVersionId: dvId })
     expect(first.ok).toBe(true)
 
     const reports = await client
@@ -71,7 +73,7 @@ describe.skipIf(!RUN)("validation.run against Supabase", () => {
     expect(reports.data![0]!.measurements_json.volumeCm3).toBeCloseTo(1, 5)
 
     // Idempotent re-run replaces the report in place (same natural key).
-    const again = await handleValidationRun({ db, storage }, { designVersionId: dvId })
+    const again = await handleValidationRun({ db, storage, queue: new PostgresJobQueue(db, new SystemClock()) }, { designVersionId: dvId })
     expect(again.ok).toBe(true)
     const after = await client.from("validation_reports").select("id").eq("design_version_id", dvId)
     expect(after.data).toHaveLength(1)

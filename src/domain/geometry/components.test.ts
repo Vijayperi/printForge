@@ -10,9 +10,10 @@ function analyze(triangles: number[][]) {
 }
 
 describe("analyzeComponents — single body", () => {
-  it("reports one component and no finding for a cube", () => {
+  it("reports one component, full volume fraction, and no finding for a cube", () => {
     const result = analyze(box([10, 10, 10]))
     expect(result.componentCount).toBe(1)
+    expect(result.smallestVolumeFraction).toBe(1)
     expect(result.findings).toEqual([])
   })
 })
@@ -36,6 +37,19 @@ describe("analyzeComponents — disjoint bodies", () => {
       ...box([2, 2, 2], [20, 0, 0]),
     ]
     expect(analyze(three).componentCount).toBe(3)
+  })
+
+  it("reports the smallest body's volume fraction", () => {
+    // A 10 mm cube (1000 mm³) and a 2 mm cube (8 mm³) → fraction ≈ 8/1008.
+    const big = box([10, 10, 10])
+    const small = box([2, 2, 2], [100, 0, 0])
+    const result = analyze([...big, ...small])
+    expect(result.smallestVolumeFraction).toBeCloseTo(8 / 1008, 6)
+  })
+
+  it("treats a flat (zero-volume) mesh as a single body fraction", () => {
+    const flat = analyze([[0, 0, 0, 10, 0, 0, 0, 10, 0]])
+    expect(flat.smallestVolumeFraction).toBe(1)
   })
 })
 

@@ -1,9 +1,9 @@
 import "server-only"
 
-import { insertReturning, maybeOneWhere, updateReturning, type Db } from "@/src/data/db"
+import { insertReturning, maybeOneWhere, selectWhere, updateReturning, type Db } from "@/src/data/db"
 import type { Finding, Measurements, ValidationReportRow } from "@/src/domain/types"
 import { newId } from "@/src/lib/ids"
-import type { Result } from "@/src/lib/result"
+import { ok, type Result } from "@/src/lib/result"
 
 const TABLE = "validation_reports"
 
@@ -33,6 +33,18 @@ export function findValidationReport(
   key: ReportKey
 ): Promise<Result<ValidationReportRow | null>> {
   return maybeOneWhere<ValidationReportRow>(db, TABLE, keyFilters(key))
+}
+
+/** The most recent report for a design version (any profile/scale), or null. */
+export async function getLatestValidationReport(
+  db: Db,
+  designVersionId: string
+): Promise<Result<ValidationReportRow | null>> {
+  const rows = await selectWhere<ValidationReportRow>(db, TABLE, [["design_version_id", designVersionId]], {
+    orderBy: "created_at",
+    ascending: false,
+  })
+  return rows.ok ? ok(rows.value[0] ?? null) : rows
 }
 
 /**

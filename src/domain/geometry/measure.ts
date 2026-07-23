@@ -13,7 +13,8 @@ const MM2_PER_CM2 = 100
  */
 export function measure(
   mesh: IndexedMesh,
-  componentCount: number
+  componentCount: number,
+  smallestComponentVolumeFraction: number
 ): { measurements: Measurements; findings: Finding[] } {
   const bounding = boundingBox(mesh)
   let signedVolume6 = 0 // 6 × Σ signed tetrahedra (mm³)
@@ -35,6 +36,7 @@ export function measure(
     surfaceAreaCm2: doubleAreaSum / 2 / MM2_PER_CM2,
     triangleCount: mesh.triangleCount,
     componentCount,
+    smallestComponentVolumeFraction,
   }
 
   const findings: Finding[] =

@@ -2,42 +2,46 @@ import "server-only"
 
 import { z } from "zod"
 
+import { getMaterialProfile, getPrinterProfile } from "@/src/config/profiles"
 import type { AssetStorage } from "@/src/adapters/storage"
 import { getAsset } from "@/src/data/assets"
+import { insertAuditEvent } from "@/src/data/auditEvents"
 import type { Db } from "@/src/data/db"
 import { getDesignVersion } from "@/src/data/designVersions"
 import { upsertValidationReport, type ReportKey } from "@/src/data/validationReports"
 import { analyzeGeometry } from "@/src/domain/geometry/analyze"
+import { buildIndexedMesh } from "@/src/domain/geometry/mesh"
+import { analyzeOverhang } from "@/src/domain/geometry/overhang"
 import { parseStl } from "@/src/domain/geometry/stlParse"
-import type { ValidationState } from "@/src/domain/stateMachines/validation"
-import type { Finding, Measurements } from "@/src/domain/types"
+import { buildReport } from "@/src/domain/printability/report"
+import type { Finding, Measurements, Verdict } from "@/src/domain/types"
+import type { JobQueue } from "@/src/jobs/queue"
 import { appError } from "@/src/lib/errors"
 import { ok, type Result } from "@/src/lib/result"
 
 export interface ValidationDeps {
   db: Db
   storage: AssetStorage
+  queue: JobQueue
 }
 
-/**
- * Placeholder printer profile for S9. S10 introduces real `PrinterProfile`s in
- * `src/config/profiles.ts` and threads the selected profile id + scale through
- * the payload; until then every report is keyed to this generic profile at
- * scale 1 (empty scale hash).
- */
-export const DEFAULT_PRINTER_PROFILE_ID = "generic-fdm"
+/** S9/S10 analyze at scale 1 (empty scale hash); S11 threads real config scale. */
+const SCALE_FACTOR = 1
 
 const payloadSchema = z.object({ designVersionId: z.string().min(1) })
 
 /**
- * validation.run (plan §6-S9 step 4): load the design version's STL from
- * storage, parse + analyze its geometry, and persist findings + measurements on
- * `validation_reports`. Idempotent — a re-run replaces the report for the same
- * (design version, profile, scale).
+ * validation.run (plan §6-S9 step 4 + §6-S10 step 3): load the design version's
+ * STL from storage, run the geometry + overhang analysis, map it to a
+ * customer-facing verdict against the default printer/material profile, and
+ * persist findings + measurements on `validation_reports`. Idempotent — a re-run
+ * replaces the report for the same (design version, profile, scale).
  *
- * S9 interim verdict maps only pass/fail on blocking findings; the full
- * pass/warning/manual_review/fail mapping against printer/material profiles
- * arrives in S10 and will route the terminal status through `validationMachine`.
+ * A `manual_review` verdict additionally records an `audit_events` flag and
+ * enqueues an `ops_manual_review` notification. The verdict string is itself a
+ * terminal `ValidationState`, so it is persisted directly (a fresh report is an
+ * initial-state assignment); `validationMachine` governs the later
+ * REVALIDATE / OPERATOR_* transitions.
  */
 export async function handleValidationRun(
   deps: ValidationDeps,
@@ -68,21 +72,50 @@ export async function handleValidationRun(
   const bytes = await deps.storage.read(assetResult.value.storage_key)
   if (!bytes.ok) return bytes
 
-  const { findings, measurements } = analyze(bytes.value)
+  const analysis = analyze(bytes.value)
+  const { verdict, findings } =
+    analysis.measurements === null
+      ? { verdict: "fail" as Verdict, findings: analysis.findings }
+      : buildReport(analysis.findings, analysis.measurements, getPrinterProfile(), getMaterialProfile(), SCALE_FACTOR)
+
   const key: ReportKey = {
     designVersionId: dvId,
-    printerProfileId: DEFAULT_PRINTER_PROFILE_ID,
+    printerProfileId: getPrinterProfile().id,
     scaleHash: "",
   }
   const persisted = await upsertValidationReport(deps.db, key, {
-    status: interimStatus(findings),
+    status: verdict,
     findings,
-    measurements,
+    measurements: analysis.measurements,
   })
-  return persisted.ok ? ok(undefined) : persisted
+  if (!persisted.ok) return persisted
+
+  if (verdict === "manual_review") {
+    return flagForReview(deps, dvId, persisted.value.id)
+  }
+  return ok(undefined)
 }
 
-/** Parse + analyze the STL, treating an unreadable file as an empty mesh. */
+/** Record the ops review flag + enqueue the ops notification for a manual review. */
+async function flagForReview(deps: ValidationDeps, dvId: string, reportId: string): Promise<Result<void>> {
+  const audit = await insertAuditEvent(deps.db, {
+    actorKind: "system",
+    entityType: "validation_report",
+    entityId: reportId,
+    action: "manual_review_flagged",
+    metadata: { designVersionId: dvId },
+  })
+  if (!audit.ok) return audit
+
+  const notify = await deps.queue.enqueue({
+    type: "notification.send",
+    payload: { template: "ops_manual_review", validationReportId: reportId, designVersionId: dvId },
+    idempotencyKey: `ops_manual_review:${reportId}`,
+  })
+  return notify.ok ? ok(undefined) : notify
+}
+
+/** Parse + analyze the STL (geometry validity + overhang), unreadable → empty. */
 function analyze(bytes: Uint8Array): { findings: Finding[]; measurements: Measurements | null } {
   const parsed = parseStl(bytes)
   if (!parsed.ok) {
@@ -93,15 +126,7 @@ function analyze(bytes: Uint8Array): { findings: Finding[]; measurements: Measur
       measurements: null,
     }
   }
-  return analyzeGeometry(parsed.value)
-}
-
-/**
- * S9 interim: pass unless a blocking finding is present (then fail). This is a
- * fresh terminal report (initial state assignment, not a transition), so it is
- * set directly; S10 replaces this with the full verdict mapping routed through
- * `validationMachine`.
- */
-function interimStatus(findings: Finding[]): ValidationState {
-  return findings.some((f) => f.severity === "blocking") ? "fail" : "pass"
+  const geometry = analyzeGeometry(parsed.value)
+  const overhang = analyzeOverhang(buildIndexedMesh(parsed.value))
+  return { findings: [...geometry.findings, ...overhang], measurements: geometry.measurements }
 }

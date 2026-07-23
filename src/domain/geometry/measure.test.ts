@@ -6,7 +6,7 @@ import { box, flip, rawFromTriangles } from "@/tests/helpers/geometry"
 
 describe("measure — unit cube at 10 mm", () => {
   const mesh = buildIndexedMesh(rawFromTriangles(box([10, 10, 10])))
-  const { measurements, findings } = measure(mesh, 1)
+  const { measurements, findings } = measure(mesh, 1, 1)
 
   it("reports the bounding box in mm", () => {
     expect(measurements.boundingMm).toEqual({ x: 10, y: 10, z: 10 })
@@ -20,9 +20,10 @@ describe("measure — unit cube at 10 mm", () => {
     expect(measurements.surfaceAreaCm2).toBeCloseTo(6, 6)
   })
 
-  it("passes through triangle and component counts", () => {
+  it("passes through triangle and component counts and the volume fraction", () => {
     expect(measurements.triangleCount).toBe(12)
     expect(measurements.componentCount).toBe(1)
+    expect(measurements.smallestComponentVolumeFraction).toBe(1)
   })
 
   it("emits no empty_mesh finding", () => {
@@ -33,7 +34,7 @@ describe("measure — unit cube at 10 mm", () => {
 describe("measure — orientation independence", () => {
   it("computes the same volume for an inward-wound cube", () => {
     const inward = box([10, 10, 10]).map(flip)
-    const { measurements } = measure(buildIndexedMesh(rawFromTriangles(inward)), 1)
+    const { measurements } = measure(buildIndexedMesh(rawFromTriangles(inward)), 1, 1)
     expect(measurements.volumeCm3).toBeCloseTo(1, 6)
   })
 })
@@ -41,7 +42,7 @@ describe("measure — orientation independence", () => {
 describe("measure — non-cube dimensions", () => {
   it("reports asymmetric bounding and volume", () => {
     const mesh = buildIndexedMesh(rawFromTriangles(box([20, 10, 5], [1, 2, 3])))
-    const { measurements } = measure(mesh, 1)
+    const { measurements } = measure(mesh, 1, 1)
     expect(measurements.boundingMm).toEqual({ x: 20, y: 10, z: 5 })
     expect(measurements.volumeCm3).toBeCloseTo(1, 6) // 20·10·5 = 1000 mm³
   })
@@ -49,7 +50,7 @@ describe("measure — non-cube dimensions", () => {
 
 describe("measure — empty mesh", () => {
   const mesh = buildIndexedMesh({ positions: new Float32Array(0), triangleCount: 0 })
-  const { measurements, findings } = measure(mesh, 0)
+  const { measurements, findings } = measure(mesh, 0, 1)
 
   it("reports zeroed measurements", () => {
     expect(measurements.boundingMm).toEqual({ x: 0, y: 0, z: 0 })

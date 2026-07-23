@@ -21,8 +21,9 @@ export interface GeometryAnalysis {
  */
 export function analyzeGeometry(raw: RawTriangles): GeometryAnalysis {
   const mesh = buildIndexedMesh(raw)
-  const { componentCount, findings: componentFindings } = analyzeComponents(mesh)
-  const { measurements, findings: measureFindings } = measure(mesh, componentCount)
+  const { componentCount, smallestVolumeFraction, findings: componentFindings } =
+    analyzeComponents(mesh)
+  const { measurements, findings: measureFindings } = measure(mesh, componentCount, smallestVolumeFraction)
 
   const degenerate: Finding[] =
     mesh.degenerateCount > 0

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 
 import { CreationPanel } from "@/src/components/studio/creation-panel"
+import { PrintabilityPanel } from "@/src/components/studio/printability-panel"
 import { StlUpload } from "@/src/components/studio/stl-upload"
 import { VersionHistory } from "@/src/components/studio/version-history"
 import { WorkspaceViewer } from "@/src/components/studio/workspace-viewer"
@@ -42,8 +43,9 @@ export function CreatorWorkspace({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-      <section className="order-1 space-y-3 lg:order-2">
+      <section className="order-1 space-y-4 lg:order-2">
         <WorkspaceViewer version={selected} projectTitle={project.title} />
+        {selected !== null ? <PrintabilityPanel key={selected.id} designVersionId={selected.id} /> : null}
       </section>
 
       <section className="order-2 space-y-8 lg:order-1">

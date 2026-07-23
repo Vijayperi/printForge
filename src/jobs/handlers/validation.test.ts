@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest"
 
+import { DEFAULT_PRINTER_PROFILE_ID } from "@/src/config/profiles"
 import type { AssetStorage } from "@/src/adapters/storage"
-import {
-  DEFAULT_PRINTER_PROFILE_ID,
-  handleValidationRun,
-  type ValidationDeps,
-} from "@/src/jobs/handlers/validation"
+import { handleValidationRun, type ValidationDeps } from "@/src/jobs/handlers/validation"
+import type { EnqueueInput, JobQueue } from "@/src/jobs/queue"
 import { appError } from "@/src/lib/errors"
 import { err, ok } from "@/src/lib/result"
 import { binaryStl, box } from "@/tests/helpers/geometry"
+import { cubeWithHole } from "@/tests/fixtures/models/generators"
 import { createFakeDb } from "@/tests/helpers/fakeDb"
 
 const CUBE_STL = binaryStl(box([10, 10, 10]))
@@ -20,6 +19,24 @@ function storageStub(bytes: Uint8Array = CUBE_STL, over: Partial<AssetStorage> =
     getSignedUrl: async () => ok("signed://x"),
     read: over.read ?? (async () => ok(bytes)),
   }
+}
+
+function queueStub(over: Partial<JobQueue> = {}): { queue: JobQueue; enqueued: EnqueueInput[] } {
+  const enqueued: EnqueueInput[] = []
+  const queue: JobQueue = {
+    enqueue:
+      over.enqueue ??
+      (async (input) => {
+        enqueued.push(input)
+        return ok({ jobId: "job_1", deduped: false })
+      }),
+    claimNext: async () => ok(null),
+    complete: async () => ok(undefined),
+    fail: async () => ok(undefined),
+    heartbeat: async () => ok(undefined),
+    reapStale: async () => ok(0),
+  }
+  return { queue, enqueued }
 }
 
 function dvRow(over: Record<string, unknown> = {}) {
@@ -43,13 +60,15 @@ function makeDeps(opts: {
   assetRows?: Record<string, unknown>[]
   reportRows?: Record<string, unknown>[]
   storage?: AssetStorage
+  queue?: JobQueue
 }): { db: ReturnType<typeof createFakeDb>; deps: ValidationDeps } {
   const db = createFakeDb({
     design_versions: { rows: opts.dvRows ?? [dvRow()], unique: ["id"] },
     assets: { rows: opts.assetRows ?? [stlAsset], unique: ["id"] },
     validation_reports: { rows: opts.reportRows ?? [], unique: ["id"] },
+    audit_events: { rows: [], unique: ["id"] },
   })
-  return { db, deps: { db, storage: opts.storage ?? storageStub() } }
+  return { db, deps: { db, storage: opts.storage ?? storageStub(), queue: opts.queue ?? queueStub().queue } }
 }
 
 const payload = { designVersionId: "dv_1" }
@@ -100,7 +119,7 @@ describe("handleValidationRun — guards", () => {
   })
 })
 
-describe("handleValidationRun — analysis + persistence", () => {
+describe("handleValidationRun — verdicts", () => {
   it("persists a passing report with measurements for a clean cube", async () => {
     const { deps, db } = makeDeps({})
     const result = await handleValidationRun(deps, payload)
@@ -108,15 +127,13 @@ describe("handleValidationRun — analysis + persistence", () => {
 
     const report = db.rows("validation_reports")[0]!
     expect(report["status"]).toBe("pass")
-    expect(report["design_version_id"]).toBe("dv_1")
     expect(report["printer_profile_id"]).toBe(DEFAULT_PRINTER_PROFILE_ID)
     expect(report["findings_json"]).toEqual([])
     expect((report["measurements_json"] as { volumeCm3: number }).volumeCm3).toBeCloseTo(1, 6)
   })
 
-  it("persists a failing report for an unreadable STL (blocking empty_mesh)", async () => {
-    const garbage = new Uint8Array([1, 2, 3])
-    const { deps, db } = makeDeps({ storage: storageStub(garbage) })
+  it("fails an unreadable STL (blocking empty_mesh, null measurements)", async () => {
+    const { deps, db } = makeDeps({ storage: storageStub(new Uint8Array([1, 2, 3])) })
     const result = await handleValidationRun(deps, payload)
     expect(result.ok).toBe(true)
     const report = db.rows("validation_reports")[0]!
@@ -130,8 +147,42 @@ describe("handleValidationRun — analysis + persistence", () => {
     const upright = [2, 2, -5, 2, 2, 5, 8, 2, 0]
     const { deps, db } = makeDeps({ storage: storageStub(binaryStl([flat, upright])) })
     await handleValidationRun(deps, payload)
+    expect(db.rows("validation_reports")[0]!["status"]).toBe("fail")
+  })
+
+  it("manual-reviews a holed cube: flags an audit event and enqueues ops notification", async () => {
+    const { queue, enqueued } = queueStub()
+    const { deps, db } = makeDeps({ storage: storageStub(binaryStl(cubeWithHole())), queue })
+    const result = await handleValidationRun(deps, payload)
+    expect(result.ok).toBe(true)
+
     const report = db.rows("validation_reports")[0]!
-    expect(report["status"]).toBe("fail")
+    expect(report["status"]).toBe("manual_review")
+    expect((report["findings_json"] as { kind: string }[]).map((f) => f.kind)).toContain("boundary_holes")
+
+    const audit = db.rows("audit_events")
+    expect(audit).toHaveLength(1)
+    expect(audit[0]!["action"]).toBe("manual_review_flagged")
+    expect(audit[0]!["entity_type"]).toBe("validation_report")
+
+    expect(enqueued).toHaveLength(1)
+    expect(enqueued[0]!.type).toBe("notification.send")
+    expect(enqueued[0]!.idempotencyKey).toBe(`ops_manual_review:${report["id"]}`)
+  })
+
+  it("propagates an audit-flag failure on manual_review", async () => {
+    const { deps, db } = makeDeps({ storage: storageStub(binaryStl(cubeWithHole())) })
+    // op1 dv, op2 asset, op3 report lookup, op4 report insert, op5 audit insert
+    db.failCall(5, { message: "audit boom" })
+    const result = await handleValidationRun(deps, payload)
+    expect(result.ok).toBe(false)
+  })
+
+  it("propagates an ops-notification enqueue failure on manual_review", async () => {
+    const queue = queueStub({ enqueue: async () => err(appError("internal", "enqueue boom")) }).queue
+    const { deps } = makeDeps({ storage: storageStub(binaryStl(cubeWithHole())), queue })
+    const result = await handleValidationRun(deps, payload)
+    expect(!result.ok && result.error.code).toBe("internal")
   })
 
   it("replaces an existing report on re-run (idempotent)", async () => {
@@ -152,13 +203,12 @@ describe("handleValidationRun — analysis + persistence", () => {
     const reports = db.rows("validation_reports")
     expect(reports).toHaveLength(1)
     expect(reports[0]!["id"]).toBe("vr_old")
-    expect(reports[0]!["status"]).toBe("pass") // overwritten by the fresh clean analysis
+    expect(reports[0]!["status"]).toBe("pass")
   })
 
   it("propagates an upsert failure", async () => {
     const { deps, db } = makeDeps({})
-    // op1 dv select, op2 asset select, op3 report lookup, op4 report insert
-    db.failCall(4, { message: "insert boom" })
+    db.failCall(4, { message: "insert boom" }) // op4 = report insert
     const result = await handleValidationRun(deps, payload)
     expect(result.ok).toBe(false)
   })

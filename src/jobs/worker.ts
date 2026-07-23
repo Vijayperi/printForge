@@ -59,7 +59,10 @@ export function dispatch(deps: WorkerDeps, job: ClaimedJob): Promise<Result<void
         job.payload
       )
     case "validation.run":
-      return handleValidationRun({ db: deps.db, storage: deps.storage }, job.payload)
+      return handleValidationRun(
+        { db: deps.db, storage: deps.storage, queue: deps.queue },
+        job.payload
+      )
     default:
       return Promise.resolve(err(appError("not_found", `no handler for job type ${job.type}`)))
   }

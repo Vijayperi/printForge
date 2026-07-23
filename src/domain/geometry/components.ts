@@ -1,18 +1,21 @@
-import type { IndexedMesh } from "@/src/domain/geometry/mesh"
+import { type IndexedMesh, vertex } from "@/src/domain/geometry/mesh"
 import { UnionFind } from "@/src/domain/geometry/unionFind"
 import type { Finding } from "@/src/domain/types"
 
 /**
- * Connected-component analysis (plan §6-S9 step 2, components). Vertices sharing
- * a triangle are unioned; the number of disjoint sets over all welded vertices
- * is the component count. More than one component → `multiple_components`.
+ * Connected-component analysis (plan §6-S9 step 2, components + S10 component
+ * volumes). Vertices sharing a triangle are unioned; the number of disjoint
+ * sets over all welded vertices is the component count. More than one component
+ * → `multiple_components`.
  *
- * Severity is `info` at S9 (non-blocking): S10 promotes to manual_review when a
- * component is small (< 5% volume) and warning otherwise. `count` carries the
- * component count.
+ * Also returns the smallest component's share of total volume (1 for a single
+ * body), which the S10 verdict uses to escalate a tiny stray shard to
+ * manual_review. Severity is `info` at S9 (non-blocking); S10's verdict keys off
+ * kind + the volume fraction, not severity.
  */
 export function analyzeComponents(mesh: IndexedMesh): {
   componentCount: number
+  smallestVolumeFraction: number
   findings: Finding[]
 } {
   const uf = new UnionFind(mesh.vertexCount)
@@ -40,5 +43,32 @@ export function analyzeComponents(mesh: IndexedMesh): {
         ]
       : []
 
-  return { componentCount, findings }
+  return { componentCount, smallestVolumeFraction: smallestFraction(mesh, uf), findings }
+}
+
+/** Smallest connected component's share of total volume (1 when ≤1 component). */
+function smallestFraction(mesh: IndexedMesh, uf: UnionFind): number {
+  if (mesh.triangleCount === 0) return 1
+  const signed6 = new Map<number, number>() // root → 6·signed volume
+  for (let t = 0; t < mesh.triangleCount; t += 1) {
+    const root = uf.find(mesh.indices[t * 3] as number)
+    const a = vertex(mesh, mesh.indices[t * 3] as number)
+    const b = vertex(mesh, mesh.indices[t * 3 + 1] as number)
+    const c = vertex(mesh, mesh.indices[t * 3 + 2] as number)
+    const tet =
+      a[0] * (b[1] * c[2] - b[2] * c[1]) +
+      a[1] * (b[2] * c[0] - b[0] * c[2]) +
+      a[2] * (b[0] * c[1] - b[1] * c[0])
+    signed6.set(root, (signed6.get(root) ?? 0) + tet)
+  }
+
+  let total = 0
+  let smallest = Infinity
+  for (const v of signed6.values()) {
+    const volume = Math.abs(v) / 6
+    total += volume
+    if (volume < smallest) smallest = volume
+  }
+  // Flat / zero-volume mesh: no meaningful fraction, treat as a single body.
+  return total === 0 ? 1 : smallest / total
 }
