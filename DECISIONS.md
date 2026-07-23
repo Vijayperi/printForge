@@ -203,3 +203,51 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   `form.reset()` doesn't clear them). Uploaded versions badged "Uploaded" in
   history. Proven live by `tests/e2e/upload.spec.ts` (no worker needed — the
   route is synchronous).
+
+## 2026-07-24 — S9: geometry analysis engine
+
+- **`src/domain/geometry/` split (all pure, 100% branch-covered via fixtures):**
+  `eps.ts` centralizes every tolerance (weld 1e-6, zero-area 1e-12, volume-sign
+  1e-9, SAT gap 1e-6, degenerate-axis 1e-12) — no epsilon lives outside it, per
+  the plan pitfall. `mesh.ts` welds by quantized position and filters+counts
+  degenerate triangles. `edges.ts` (shared undirected edge map) feeds `manifold.ts`
+  and `normals.ts`; `unionFind.ts` (typed-array DSU) feeds `components.ts` and the
+  manifold boundary-loop count. `measure.ts`, `intersect.ts`, and the `analyze.ts`
+  orchestrator round it out.
+- **Self-intersection test uses SAT, not Möller.** The classic 11-axis edge-cross
+  SAT degenerates for coplanar triangles (all edge-cross axes point out of plane),
+  so coplanar-disjoint pairs would falsely report intersection. Augmented with the
+  6 in-plane edge-normal axes (n×edge) → 17 axes; adding valid axes never creates
+  false separation, so the test is correct for coplanar + skew uniformly and avoids
+  Möller's fragile coplanar special-case branches. AABB BVH (median split, leaf ≤ 8)
+  narrows candidates; adjacent (shared-welded-vertex) pairs are skipped; count capped
+  at 100 with an early-exit flag.
+- **`boundary_holes.count` carries total boundary edge count, not loop count.** The
+  plan's manifold step says "loop count" but the S10 verdict thresholds on edge count
+  (> 100 → fail, ≤ 100 → manual_review). Emitting the decision-critical number as
+  `count` and putting the loop count in `detail` serves the pipeline; DECISIONS notes
+  the deviation.
+- **Finding severities are set for the S9 interim verdict** (pass/fail on *blocking*
+  findings only): only `empty_mesh` and `self_intersections` are `blocking` (→ fail);
+  `non_manifold_edges`, `boundary_holes`, `inverted_normals` are `warning`;
+  `multiple_components`, `degenerate_geometry` are `info`. S10 replaces this with the
+  full pass/warning/manual_review/fail mapping against printer/material profiles.
+- **Interim terminal status is assigned directly**, not routed through
+  `validationMachine.next()`. A fresh terminal report is an initial-state assignment
+  (like generation inserting `queued`), not a transition of an existing row; routing
+  it through the machine would add an unreachable error branch that breaks the 100%
+  gate. The machine (full S×E matrix in `stateMachines/validation.ts`) is fully tested
+  and will drive the REVALIDATE/OPERATOR_* transitions S10+ add.
+- **Generated path now also enqueues `validation.run`.** Only the S8 upload route
+  enqueued it; the S7 ingestion handler did not, so generated models were never
+  validated. `handleAssetIngest` now enqueues `validation.run` (same `validate:{dvId}`
+  key as upload → idempotent) after attaching assets; `IngestionDeps` gained `queue`.
+- **Fixtures are generated in code, not committed as binary STL.** `tests/fixtures/
+  models/generators.ts` builds each documented shape (README.md has the expected
+  findings + hand-verified numbers); a 100k-triangle binary STL blob (~5 MB) would
+  bloat the repo. The perf fixture is a procedural ~100k-tri torus; analysis runs in
+  well under a second locally (budget 5 s, asserted < 15 s for ×3 CI margin).
+- **`tests/integration/validationRun.test.ts` is written but UNRUN this session** —
+  Docker/Supabase were down. It is env-gated (`SUPABASE_INTEGRATION=1`) and mirrors the
+  known-good `assetIngest` integration setup; run it with `supabase start` +
+  `npm run test:integration`.

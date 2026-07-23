@@ -97,8 +97,13 @@ describe("dispatch", () => {
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 
-  it("has no handler for unregistered job types", async () => {
+  it("routes validation.run to its handler", async () => {
     const result = await dispatch(makeDeps(), claimed({ type: "validation.run", payload: {} }))
+    expect(!result.ok && result.error.code).toBe("validation") // invalid payload reached the handler
+  })
+
+  it("has no handler for unregistered job types", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "slicing.run", payload: {} }))
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 })

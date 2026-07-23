@@ -8,6 +8,7 @@ import { insertAsset } from "@/src/data/assets"
 import { attachAssets, getDesignVersion } from "@/src/data/designVersions"
 import type { Db } from "@/src/data/db"
 import type { AssetType } from "@/src/domain/types"
+import type { JobQueue } from "@/src/jobs/queue"
 import { appError } from "@/src/lib/errors"
 import { ok, type Result } from "@/src/lib/result"
 
@@ -16,6 +17,7 @@ export interface IngestionDeps {
   storage: AssetStorage
   converter: GlbConverter
   appUrl: string
+  queue: JobQueue
 }
 
 const payloadSchema = z.object({
@@ -99,5 +101,15 @@ export async function handleAssetIngest(deps: IngestionDeps, rawPayload: unknown
     stlAssetId: stlAssetId.value,
     thumbnailAssetId: thumbnailAssetId.value,
   })
-  return attach.ok ? ok(undefined) : attach
+  if (!attach.ok) return attach
+
+  // The generated model now has a first-class STL — send it through the same
+  // printability validation as an uploaded one. Shares the upload route's
+  // idempotency key so a re-ingest never double-queues.
+  const enqueue = await deps.queue.enqueue({
+    type: "validation.run",
+    payload: { designVersionId: dvId },
+    idempotencyKey: `validate:${dvId}`,
+  })
+  return enqueue.ok ? ok(undefined) : enqueue
 }

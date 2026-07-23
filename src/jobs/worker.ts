@@ -8,6 +8,7 @@ import {
   type GenerationDeps,
 } from "@/src/jobs/handlers/generation"
 import { handleAssetIngest } from "@/src/jobs/handlers/ingestion"
+import { handleValidationRun } from "@/src/jobs/handlers/validation"
 import type { ClaimedJob, JobType } from "@/src/jobs/queue"
 import { appError, type ErrorCode } from "@/src/lib/errors"
 import { err, type Result } from "@/src/lib/result"
@@ -20,7 +21,12 @@ export interface WorkerDeps extends GenerationDeps {
 }
 
 /** Job types this worker claims and can dispatch. */
-export const HANDLED_TYPES: JobType[] = ["generation.submit", "generation.poll", "asset.ingest"]
+export const HANDLED_TYPES: JobType[] = [
+  "generation.submit",
+  "generation.poll",
+  "asset.ingest",
+  "validation.run",
+]
 
 const PERMANENT_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
   "validation",
@@ -43,9 +49,17 @@ export function dispatch(deps: WorkerDeps, job: ClaimedJob): Promise<Result<void
       return handleGenerationPoll(deps, job.payload)
     case "asset.ingest":
       return handleAssetIngest(
-        { db: deps.db, storage: deps.storage, converter: deps.converter, appUrl: deps.appUrl },
+        {
+          db: deps.db,
+          storage: deps.storage,
+          converter: deps.converter,
+          appUrl: deps.appUrl,
+          queue: deps.queue,
+        },
         job.payload
       )
+    case "validation.run":
+      return handleValidationRun({ db: deps.db, storage: deps.storage }, job.payload)
     default:
       return Promise.resolve(err(appError("not_found", `no handler for job type ${job.type}`)))
   }

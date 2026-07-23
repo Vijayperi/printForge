@@ -17,6 +17,8 @@ import { MockGlbConverter } from "@/src/adapters/conversion/mock"
 import { SupabaseStorage, type MinimalStorageClient } from "@/src/adapters/storage/supabase"
 import type { Db } from "@/src/data/db"
 import { handleAssetIngest } from "@/src/jobs/handlers/ingestion"
+import { PostgresJobQueue } from "@/src/jobs/queue"
+import { SystemClock } from "@/src/lib/clock"
 
 const RUN = process.env["SUPABASE_INTEGRATION"] === "1"
 const URL = process.env["NEXT_PUBLIC_SUPABASE_URL"] ?? "http://127.0.0.1:54321"
@@ -61,7 +63,13 @@ describe.skipIf(!RUN)("asset.ingest against Supabase storage", () => {
       glb_asset_id: null,
     })
 
-    const deps = { db, storage, converter: new MockGlbConverter(), appUrl }
+    const deps = {
+      db,
+      storage,
+      converter: new MockGlbConverter(),
+      appUrl,
+      queue: new PostgresJobQueue(db, new SystemClock()),
+    }
     const result = await handleAssetIngest(deps, { designVersionId: dvId, glbUrl: "/cube.glb" })
     expect(result.ok).toBe(true)
 

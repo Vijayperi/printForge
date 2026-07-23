@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import type { GlbConverter } from "@/src/adapters/conversion"
 import type { AssetStorage } from "@/src/adapters/storage"
 import { handleAssetIngest, type IngestionDeps } from "@/src/jobs/handlers/ingestion"
+import type { EnqueueInput, JobQueue } from "@/src/jobs/queue"
 import { appError } from "@/src/lib/errors"
 import { err, ok } from "@/src/lib/result"
 import { createFakeDb, FakeDb } from "@/tests/helpers/fakeDb"
@@ -41,12 +42,35 @@ function dvRow(over: Record<string, unknown> = {}) {
   }
 }
 
-function makeDeps(rows: Record<string, unknown>[], storage = storageStub(), converter = converterStub()) {
+function queueStub(over: Partial<JobQueue> = {}): { queue: JobQueue; enqueued: EnqueueInput[] } {
+  const enqueued: EnqueueInput[] = []
+  const queue: JobQueue = {
+    enqueue:
+      over.enqueue ??
+      (async (input) => {
+        enqueued.push(input)
+        return ok({ jobId: "job_1", deduped: false })
+      }),
+    claimNext: async () => ok(null),
+    complete: async () => ok(undefined),
+    fail: async () => ok(undefined),
+    heartbeat: async () => ok(undefined),
+    reapStale: async () => ok(0),
+  }
+  return { queue, enqueued }
+}
+
+function makeDeps(
+  rows: Record<string, unknown>[],
+  storage = storageStub(),
+  converter = converterStub(),
+  queue = queueStub().queue
+) {
   const db = createFakeDb({
     design_versions: { rows, unique: ["id"] },
     assets: { rows: [], unique: ["id", "storage_key"] },
   })
-  const deps: IngestionDeps = { db, storage, converter, appUrl: "http://localhost:3000" }
+  const deps: IngestionDeps = { db, storage, converter, appUrl: "http://localhost:3000", queue }
   return { db, deps }
 }
 
@@ -182,6 +206,30 @@ describe("handleAssetIngest", () => {
     db.failCall(5, { message: "attach boom" }) // op5 = attachAssets update
     const result = await handleAssetIngest(deps, payload)
     expect(!result.ok && result.error.code).toBe("provider_error")
+  })
+
+  it("enqueues validation.run for the newly-ingested design version", async () => {
+    const { queue, enqueued } = queueStub()
+    const { deps } = makeDeps([dvRow()], storageStub(), converterStub(), queue)
+    const result = await handleAssetIngest(deps, payload)
+    expect(result.ok).toBe(true)
+    expect(enqueued).toEqual([
+      { type: "validation.run", payload: { designVersionId: "dv_1" }, idempotencyKey: "validate:dv_1" },
+    ])
+  })
+
+  it("does not enqueue validation when the GLB is already ingested", async () => {
+    const { queue, enqueued } = queueStub()
+    const { deps } = makeDeps([dvRow({ glb_asset_id: "ast_existing" })], storageStub(), converterStub(), queue)
+    await handleAssetIngest(deps, payload)
+    expect(enqueued).toHaveLength(0)
+  })
+
+  it("propagates a validation.run enqueue failure", async () => {
+    const { queue } = queueStub({ enqueue: async () => err(appError("internal", "enqueue boom")) })
+    const { deps } = makeDeps([dvRow()], storageStub(), converterStub(), queue)
+    const result = await handleAssetIngest(deps, payload)
+    expect(!result.ok && result.error.code).toBe("internal")
   })
 })
 
