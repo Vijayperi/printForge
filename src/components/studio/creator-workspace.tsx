@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { useCallback, useState } from "react"
 
 import { CreationPanel } from "@/src/components/studio/creation-panel"
+import { StlUpload } from "@/src/components/studio/stl-upload"
 import { VersionHistory } from "@/src/components/studio/version-history"
 import { WorkspaceViewer } from "@/src/components/studio/workspace-viewer"
 import { Button } from "@/src/components/ui/button"
@@ -54,6 +55,7 @@ export function CreatorWorkspace({
             initialBrief={refine.brief}
             onGenerated={onGenerated}
           />
+          <StlUpload projectId={project.id} onUploaded={onGenerated} />
         </div>
 
         <div className="space-y-3">

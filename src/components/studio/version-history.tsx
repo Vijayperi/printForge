@@ -59,9 +59,12 @@ export function VersionHistory({
                 {new Date(version.created_at).toLocaleDateString()}
               </span>
             </span>
-            <Badge variant={STATUS_VARIANT[version.generation_status] ?? "secondary"}>
-              {version.generation_status}
-            </Badge>
+            <span className="flex shrink-0 flex-col items-end gap-1">
+              {version.source === "uploaded" ? <Badge variant="outline">Uploaded</Badge> : null}
+              <Badge variant={STATUS_VARIANT[version.generation_status] ?? "secondary"}>
+                {version.generation_status}
+              </Badge>
+            </span>
           </button>
         </li>
       ))}

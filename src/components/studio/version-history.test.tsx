@@ -29,6 +29,17 @@ describe("VersionHistory", () => {
     expect(within(items[1] as HTMLElement).getByText("Untitled version")).toBeInTheDocument()
   })
 
+  it("badges uploaded versions and not generated ones", () => {
+    const versions = [
+      designVersion({ id: "dv_u", source: "uploaded", prompt: null }),
+      designVersion({ id: "dv_g", source: "generated" }),
+    ]
+    render(<VersionHistory versions={versions} selectedId={null} onSelect={() => {}} />)
+    const items = within(screen.getByRole("list", { name: "Version history" })).getAllByRole("button")
+    expect(within(items[0] as HTMLElement).getByText("Uploaded")).toBeInTheDocument()
+    expect(within(items[1] as HTMLElement).queryByText("Uploaded")).not.toBeInTheDocument()
+  })
+
   it("truncates a long prompt", () => {
     const long = "x".repeat(120)
     render(<VersionHistory versions={[designVersion({ prompt: long })]} selectedId={null} onSelect={() => {}} />)

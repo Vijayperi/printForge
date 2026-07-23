@@ -176,3 +176,30 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
 - Proven live: `tests/integration/assetIngest.test.ts` (real bucket ingest +
   idempotency) and `tests/e2e/creator.spec.ts` (full sign-up→prompt→generate→
   ingest→viewer golden path, ~27s with the worker running).
+
+## 2026-07-23 — S8: direct STL upload path
+
+- `src/domain/geometry/stlParse.ts`: binary+ASCII → RawTriangles with typed
+  rejections. Size/triangle limits are an injectable `StlLimits` param (default
+  50MB / 2M) so the `too_large` branches are testable without huge allocations.
+  Binary vs ASCII is disambiguated by exact byte-length match (84+50·n), so a
+  binary file whose header starts with "solid" is still parsed as binary. S9's
+  geometry engine will consume RawTriangles.
+- `convertStlToGlb` (real, three GLTFExporter): needs a `FileReader` polyfill in
+  a plain Node runtime (jsdom/browser have it) — extracted as a tested
+  `ensureFileReader(host)`. Build-scene / export-glb split so the exporter
+  error path is coverable by mocking GLTFExporter.
+- UploadScanner adapter: interface + MockScanner (EICAR signature → threat) +
+  contract; real scanner is owner-era.
+- `POST /api/uploads/stl`: multipart → validate (.stl, ≤50MB) → scanner → parse
+  (reject before storing) → ownership → convertStlToGlb + thumbnail → store STL
+  + GLB + thumbnail, create DesignVersion(source `uploaded`, ready) with assets
+  attached, enqueue `validation.run` (handler lands in S9). File presence is
+  DUCK-TYPED (`isUploadedFile`), not `instanceof File`, because the File class
+  differs between jsdom and undici; the route test runs with
+  `/** @vitest-environment node */` so FormData/Request/File match production.
+- StlUpload UI reads the file via `form.elements.namedItem("file")` and clears
+  via `input.value = ""` (jsdom's `new FormData(form)` skips file inputs and
+  `form.reset()` doesn't clear them). Uploaded versions badged "Uploaded" in
+  history. Proven live by `tests/e2e/upload.spec.ts` (no worker needed — the
+  route is synchronous).

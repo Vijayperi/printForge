@@ -21,6 +21,16 @@ vi.mock("@/src/components/studio/creation-panel", () => ({
   ),
 }))
 
+vi.mock("@/src/components/studio/stl-upload", () => ({
+  StlUpload: (props: { projectId: string; onUploaded: () => void }) => (
+    <div data-testid="stl-upload" data-project={props.projectId}>
+      <button type="button" onClick={props.onUploaded}>
+        fire-uploaded
+      </button>
+    </div>
+  ),
+}))
+
 import { CreatorWorkspace } from "@/src/components/studio/creator-workspace"
 import { designVersion } from "@/tests/helpers/designVersion"
 
@@ -66,6 +76,14 @@ describe("CreatorWorkspace", () => {
     const user = userEvent.setup()
     render(<CreatorWorkspace project={project} versions={[designVersion({ generation_status: "ready", glb_asset_id: "ast_g" })]} />)
     await user.click(screen.getByRole("button", { name: "fire-generated" }))
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it("offers an STL upload wired to the project and refreshes on upload", async () => {
+    const user = userEvent.setup()
+    render(<CreatorWorkspace project={project} versions={[]} />)
+    expect(screen.getByTestId("stl-upload")).toHaveAttribute("data-project", "proj_1")
+    await user.click(screen.getByRole("button", { name: "fire-uploaded" }))
     expect(refresh).toHaveBeenCalledOnce()
   })
 
