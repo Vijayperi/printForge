@@ -343,3 +343,51 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   and `E2E_SUPABASE=1 npm run e2e` with a running worker → all 14 e2e pass, incl. the
   previously-UNRUN `validation.spec.ts` (S10) and the new `configuration.spec.ts`
   (S11: constraint matrix + resize re-check + per-DV persistence across reload).
+
+## 2026-07-25 — S12: slicer adapter, pricing engine, quotes (INR)
+
+- **The MockSlicer reads the mesh from storage and derives volume itself** (via the
+  S9 geometry engine) rather than taking volume in the payload. The §4.4 `Slicer`
+  interface only carries `meshStorageKey`, so both impls read the mesh; volume scales
+  by `scaleFactor³`, and `supportsUsed` reuses the S10 overhang heuristic. Deterministic,
+  binary-free, self-contained. Writes a stub gcode (text header) to a new `gcode` bucket.
+- **PrusaSlicerCli is DI'd over a `PrusaRuntime` seam** (writeTempMesh/run/readGcode/
+  cleanup). Its logic (arg building, gcode-comment parsing, orchestration + error paths)
+  is 100%-covered against a fake runtime + a captured gcode fixture; only the real
+  child_process+fs wrapper (`src/adapters/slicer/nodeRuntime.ts`) is coverage-excluded
+  (plan §5.1, like scripts/worker.ts). Real-binary slicing is a `describe.skipIf`.
+- **Material ₹/g lives in `pricingRules.ts`, density stays on the material profile.**
+  Slicing is physical (density → grams); pricing is commercial (₹/g). The pricing engine
+  is pure/Clock-free, emits the seven fixed line keys, `total === Σ lines` (asserted), and
+  half-up paisa rounding via the money helpers. Three golden breakdowns are committed in
+  `tests/fixtures/pricing/` (kept out of `src/` so they aren't instrumented as source).
+- **`taxMode: 'mor_handled'`** — Dodo is Merchant of Record and may remit GST, so the GST
+  line is computed but zero until the owner confirms (re-verify at S13). All pricingRules +
+  commerce SLAs are `OWNER DECISION REQUIRED` placeholders.
+- **Quote freshness is keyed by a `config_hash`** (scale|material|quality|strength|shipping
+  — **colour excluded**, a test asserts a colour change doesn't fork the hash). The
+  print_configuration row mutates in place per DV, so `configuration_id` alone can't detect
+  a pricing change; a migration adds `config_hash` to `quotes`. The slicing.run handler is
+  idempotent (no-ops if an active quote already exists for the hash) and self-invalidating
+  (no-ops if the config changed since enqueue), so a duplicate enqueue is harmless and a
+  lapsed quote can be re-quoted. The POST route's `slicing.run` idempotency key therefore
+  carries a per-request ULID rather than deduping on the hash.
+- **`transitionOrThrow(machine, from, event)`** added to the machine module: resolves a
+  transition the caller knows is legal by construction (literal source state), returning
+  the target directly and throwing on an illegal pair. This avoids a dead
+  error-handling branch at each always-legal writer (e.g. `active→EXPIRE` on quote read).
+  The supersede path instead transitions from each quote's *actual* status over all
+  quotes, skipping terminal ones — so both `next()` branches are reachable and covered.
+- **Quote expiry is enforced on read** (no cron): GET/POST resolve the fresh active quote
+  and EXPIRE a lapsed one in place. The `QuotePanel` is action-driven ("Get a quote" POSTs;
+  a 202 shows a slicing skeleton and polls until the quote lands) with all async in a
+  single effect guarded by one `active` closure — the pattern that stays 100%-coverable
+  (an event-handler `mountedRef` guard's unmount branch proved un-coverable under jsdom).
+- **New `gcode` storage bucket** (migration `20260725000001`) — the MockSlicer/PrusaSlicerCli
+  write gcode with keyPrefix `gcode`, which `bucketOf` maps to this bucket (found the gap via
+  the quote e2e: "Bucket not found").
+- **Verified:** 1298 unit @ 100% + `npm run verify` green; 26 live integration; the new
+  `quote.spec.ts` (upload → configure → get quote → INR breakdown) passes with Supabase +
+  worker. **Full-suite e2e remains flaky under load** (dev-server slowness; plus a
+  pre-existing S4 `projects.spec` strict-mode ambiguity unrelated to S12) — every S12/worker
+  spec passes in isolation.

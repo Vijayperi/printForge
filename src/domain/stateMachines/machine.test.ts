@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { defineMachine } from "@/src/domain/stateMachines/machine"
+import { defineMachine, transitionOrThrow } from "@/src/domain/stateMachines/machine"
 
 type S = "a" | "b" | "c"
 type E = "GO" | "BACK" | "STOP"
@@ -44,5 +44,15 @@ describe("defineMachine", () => {
   it("next() rejects any event from a terminal state", () => {
     expect(m.next("c", "GO").ok).toBe(false)
     expect(m.next("c", "BACK").ok).toBe(false)
+  })
+})
+
+describe("transitionOrThrow", () => {
+  it("returns the target for a legal transition", () => {
+    expect(transitionOrThrow(m, "a", "GO")).toBe("b")
+  })
+
+  it("throws a conflict error for an illegal transition", () => {
+    expect(() => transitionOrThrow(m, "a", "STOP")).toThrow(/illegal transition/)
   })
 })

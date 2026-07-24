@@ -132,6 +132,7 @@ export interface PrintConfigurationRow extends Timestamps {
 export interface QuoteRow extends Timestamps {
   id: string
   configuration_id: string
+  config_hash: string
   status: string
   amount_minor: number
   currency: string

@@ -9,7 +9,7 @@ import {
 } from "@/src/data/db"
 import type { QuoteBreakdownLine, QuoteRow } from "@/src/domain/types"
 import { newId } from "@/src/lib/ids"
-import type { Result } from "@/src/lib/result"
+import { ok, type Result } from "@/src/lib/result"
 
 const TABLE = "quotes"
 
@@ -17,6 +17,7 @@ export function insertQuote(
   db: Db,
   input: {
     configurationId: string
+    configHash: string
     amountMinor: number
     breakdownJson: QuoteBreakdownLine[]
     expiresAt: string
@@ -28,6 +29,7 @@ export function insertQuote(
   return insertReturning<QuoteRow>(db, TABLE, {
     id: newId("qt"),
     configuration_id: input.configurationId,
+    config_hash: input.configHash,
     status: input.status ?? "active",
     amount_minor: input.amountMinor,
     currency: input.currency ?? "INR",
@@ -49,6 +51,32 @@ export function listQuotesByConfiguration(
     orderBy: "created_at",
     ascending: false,
   })
+}
+
+/** The most recent quote for a (configuration, pricing hash), any status, or null. */
+export async function getLatestQuoteByConfigHash(
+  db: Db,
+  configurationId: string,
+  configHash: string
+): Promise<Result<QuoteRow | null>> {
+  const rows = await selectWhere<QuoteRow>(db, TABLE, [
+    ["configuration_id", configurationId],
+    ["config_hash", configHash],
+  ], { orderBy: "created_at", ascending: false })
+  return rows.ok ? ok(rows.value[0] ?? null) : rows
+}
+
+/** The active quote for a (configuration, pricing hash), or null. */
+export function getActiveQuoteByConfigHash(
+  db: Db,
+  configurationId: string,
+  configHash: string
+): Promise<Result<QuoteRow | null>> {
+  return maybeOneWhere<QuoteRow>(db, TABLE, [
+    ["configuration_id", configurationId],
+    ["config_hash", configHash],
+    ["status", "active"],
+  ])
 }
 
 export function updateQuoteStatus(db: Db, id: string, status: string): Promise<Result<QuoteRow>> {

@@ -6,6 +6,7 @@ import { useCallback, useState, type ReactNode } from "react"
 import { ConfigurePanel, type LiveConfig } from "@/src/components/studio/configure-panel"
 import { CreationPanel } from "@/src/components/studio/creation-panel"
 import { PrintabilityPanel } from "@/src/components/studio/printability-panel"
+import { QuotePanel } from "@/src/components/studio/quote-panel"
 import { StlUpload } from "@/src/components/studio/stl-upload"
 import { VersionHistory } from "@/src/components/studio/version-history"
 import { WorkspaceViewer } from "@/src/components/studio/workspace-viewer"
@@ -13,6 +14,7 @@ import { Button } from "@/src/components/ui/button"
 import type { DesignVersionRow, ProjectRow, StructuredBrief } from "@/src/domain/types"
 
 const NEUTRAL_LIVE: LiveConfig = { swatchColor: null, scaleFactor: 1 }
+type WorkspaceTab = "printability" | "configure" | "quote"
 
 function defaultVersion(versions: DesignVersionRow[]): DesignVersionRow | null {
   return versions.find((version) => version.generation_status === "ready") ?? versions[0] ?? null
@@ -34,7 +36,7 @@ export function CreatorWorkspace({
     brief: null,
     key: 0,
   })
-  const [tab, setTab] = useState<"printability" | "configure">("printability")
+  const [tab, setTab] = useState<WorkspaceTab>("printability")
   const [live, setLive] = useState<LiveConfig>(NEUTRAL_LIVE)
 
   const selected =
@@ -64,6 +66,9 @@ export function CreatorWorkspace({
               <TabButton id="configure" active={tab === "configure"} onSelect={setTab}>
                 Configure
               </TabButton>
+              <TabButton id="quote" active={tab === "quote"} onSelect={setTab}>
+                Quote
+              </TabButton>
             </div>
             <div
               role="tabpanel"
@@ -80,6 +85,14 @@ export function CreatorWorkspace({
               hidden={tab !== "configure"}
             >
               <ConfigurePanel key={selected.id} designVersionId={selected.id} onLiveChange={setLive} />
+            </div>
+            <div
+              role="tabpanel"
+              id="panel-quote"
+              aria-labelledby="tab-quote"
+              hidden={tab !== "quote"}
+            >
+              <QuotePanel key={selected.id} designVersionId={selected.id} />
             </div>
           </div>
         ) : null}
@@ -127,9 +140,9 @@ function TabButton({
   onSelect,
   children,
 }: {
-  id: "printability" | "configure"
+  id: WorkspaceTab
   active: boolean
-  onSelect: (id: "printability" | "configure") => void
+  onSelect: (id: WorkspaceTab) => void
   children: ReactNode
 }) {
   return (

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { GenerationProvider, GenerationStatus } from "@/src/adapters/generation"
 import { MockGlbConverter } from "@/src/adapters/conversion/mock"
+import { MockSlicer } from "@/src/adapters/slicer/mock"
 import { InMemoryStorage } from "@/src/adapters/storage/memory"
 import type { ClaimedJob, JobQueue } from "@/src/jobs/queue"
 import {
@@ -43,14 +44,16 @@ function makeDeps(over: { queue?: JobQueue; provider?: GenerationProvider; rows?
     design_versions: { rows: over.rows ?? [], unique: ["id"] },
     jobs: { rows: [], unique: ["id", "idempotency_key"] },
   })
+  const storage = new InMemoryStorage()
   return {
     db,
     queue: over.queue ?? fakeQueue(),
     provider: over.provider ?? stubProvider(),
     clock: new FixedClock(NOW),
     workerId: "w1",
-    storage: new InMemoryStorage(),
+    storage,
     converter: new MockGlbConverter(),
+    slicer: new MockSlicer(storage),
     appUrl: "http://localhost:3000",
   }
 }
@@ -102,8 +105,13 @@ describe("dispatch", () => {
     expect(!result.ok && result.error.code).toBe("validation") // invalid payload reached the handler
   })
 
-  it("has no handler for unregistered job types", async () => {
+  it("routes slicing.run to its handler", async () => {
     const result = await dispatch(makeDeps(), claimed({ type: "slicing.run", payload: {} }))
+    expect(!result.ok && result.error.code).toBe("validation") // invalid payload reached the handler
+  })
+
+  it("has no handler for unregistered job types", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "notification.send", payload: {} }))
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 })

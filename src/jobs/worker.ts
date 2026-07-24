@@ -1,6 +1,7 @@
 import "server-only"
 
 import type { GlbConverter } from "@/src/adapters/conversion"
+import type { Slicer } from "@/src/adapters/slicer"
 import type { AssetStorage } from "@/src/adapters/storage"
 import {
   handleGenerationPoll,
@@ -8,6 +9,7 @@ import {
   type GenerationDeps,
 } from "@/src/jobs/handlers/generation"
 import { handleAssetIngest } from "@/src/jobs/handlers/ingestion"
+import { handleSlicingRun } from "@/src/jobs/handlers/slicing"
 import { handleValidationRun } from "@/src/jobs/handlers/validation"
 import type { ClaimedJob, JobType } from "@/src/jobs/queue"
 import { appError, type ErrorCode } from "@/src/lib/errors"
@@ -17,6 +19,7 @@ export interface WorkerDeps extends GenerationDeps {
   workerId: string
   storage: AssetStorage
   converter: GlbConverter
+  slicer: Slicer
   appUrl: string
 }
 
@@ -26,6 +29,7 @@ export const HANDLED_TYPES: JobType[] = [
   "generation.poll",
   "asset.ingest",
   "validation.run",
+  "slicing.run",
 ]
 
 const PERMANENT_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
@@ -63,6 +67,8 @@ export function dispatch(deps: WorkerDeps, job: ClaimedJob): Promise<Result<void
         { db: deps.db, storage: deps.storage, queue: deps.queue },
         job.payload
       )
+    case "slicing.run":
+      return handleSlicingRun({ db: deps.db, slicer: deps.slicer, clock: deps.clock }, job.payload)
     default:
       return Promise.resolve(err(appError("not_found", `no handler for job type ${job.type}`)))
   }

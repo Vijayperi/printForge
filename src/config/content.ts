@@ -236,3 +236,25 @@ export const configurationContent = {
   saveError: "Couldn’t save — please try again.",
   revalidating: "Re-checking printability at the new size…",
 } as const
+
+/**
+ * Quote-tab copy (plan §6-S12 step 4). OWNER DECISION REQUIRED: the refund /
+ * re-quote policy wording below is a placeholder pending legal review.
+ */
+export const quoteContent = {
+  title: "Quote",
+  intro: "Get an instant price for your current configuration.",
+  getQuote: "Get a quote",
+  requote: "Refresh quote",
+  pendingLabel: "Slicing your model and preparing a price…",
+  breakdownHeading: "Price breakdown",
+  totalLabel: "Total (incl. taxes where applicable)",
+  durationLabel: "Estimated print time",
+  productionLabel: "Production",
+  deliveryLabel: "Delivery",
+  daysSuffix: "business days",
+  validUntilLabel: "Quote valid until",
+  proceed: "Proceed to checkout",
+  disclaimer:
+    "Prices are estimates from an automated slice and may be re-quoted if the model or options change. Orders can be refunded per our returns policy before production begins.",
+} as const

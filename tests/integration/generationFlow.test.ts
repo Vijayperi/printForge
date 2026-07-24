@@ -14,6 +14,7 @@ import type { Db } from "@/src/data/db"
 import { PostgresJobQueue } from "@/src/jobs/queue"
 import { runOnce, type WorkerDeps } from "@/src/jobs/worker"
 import { InMemoryStorage } from "@/src/adapters/storage/memory"
+import { MockSlicer } from "@/src/adapters/slicer/mock"
 import { MockGlbConverter } from "@/src/adapters/conversion/mock"
 import { FixedClock } from "@/src/lib/clock"
 
@@ -68,14 +69,16 @@ describe.skipIf(!RUN)("generation flow (Supabase)", () => {
     const serviceDb = createClient(URL, SERVICE, {
       auth: { persistSession: false, autoRefreshToken: false },
     }) as unknown as Db
+    const storage = new InMemoryStorage()
     const deps: WorkerDeps = {
       db: serviceDb,
       queue: new PostgresJobQueue(serviceDb, clock),
       provider: new MockGenerationProvider({ pollsUntilReady: 2 }),
       clock,
       workerId: `test-worker-${tag}`,
-      storage: new InMemoryStorage(),
+      storage,
       converter: new MockGlbConverter(),
+      slicer: new MockSlicer(storage),
       appUrl: "http://localhost:3000",
     }
 

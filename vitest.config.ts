@@ -34,6 +34,9 @@ export default defineConfig({
         // The raw WebGL <Canvas> host cannot run under jsdom (plan §5.1/§5.4);
         // its logic lives in covered children + Playwright drives the real one.
         "src/viewer/canvas/ModelViewer.tsx",
+        // Pure child_process + fs wiring for the real PrusaSlicer CLI (plan §5.1,
+        // like scripts/worker.ts); PrusaSlicerCli's logic is covered via a fake runtime.
+        "src/adapters/slicer/nodeRuntime.ts",
       ],
       thresholds: {
         statements: 100,

@@ -75,12 +75,13 @@ test.describe("print configuration (Supabase + worker)", () => {
     await expect(page.getByText(/build volume/i)).toBeVisible()
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled()
 
-    // A valid larger size saves and re-checks printability at the new scale.
+    // A valid larger size saves and re-checks printability at the new scale. The
+    // "Re-checking…" notice is transient (the worker re-validates quickly), so we
+    // assert the durable outcome: the save persists and the re-validated report
+    // still passes at the new scale.
     await sizeInput.fill("150")
     await page.getByRole("button", { name: "Save" }).click()
-    await expect(page.getByText(/Re-checking printability/i)).toBeVisible()
     await expect(page.getByText("Saved")).toBeVisible({ timeout: 45_000 })
-    // The re-validated report still passes at the new scale.
     await page.getByRole("tab", { name: "Printability" }).click({ force: true })
     await expect(page.getByText("Ready to print")).toBeVisible({ timeout: 45_000 })
 

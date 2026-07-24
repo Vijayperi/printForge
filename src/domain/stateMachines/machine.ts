@@ -40,3 +40,19 @@ export function defineMachine<S extends string, E extends string>(
     next,
   }
 }
+
+/**
+ * Resolve a transition that the caller knows is legal by construction (e.g. a
+ * literal source state), returning the target directly. Throws on an illegal pair
+ * — a programming error, not a runtime condition — so callers need no dead
+ * error-handling branch. Use `next` where the source state is dynamic/untrusted.
+ */
+export function transitionOrThrow<S extends string, E extends string>(
+  machine: Machine<S, E>,
+  state: S,
+  event: E
+): S {
+  const result = machine.next(state, event)
+  if (!result.ok) throw result.error
+  return result.value
+}

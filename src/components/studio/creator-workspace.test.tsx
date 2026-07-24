@@ -54,6 +54,10 @@ vi.mock("@/src/components/studio/configure-panel", () => ({
   ),
 }))
 
+vi.mock("@/src/components/studio/quote-panel", () => ({
+  QuotePanel: (props: { designVersionId: string }) => <div data-testid="quote-panel" data-dv={props.designVersionId} />,
+}))
+
 import { CreatorWorkspace } from "@/src/components/studio/creator-workspace"
 import { designVersion } from "@/tests/helpers/designVersion"
 
@@ -131,6 +135,10 @@ describe("CreatorWorkspace", () => {
     await user.click(screen.getByRole("tab", { name: "Configure" }))
     expect(screen.getByRole("tab", { name: "Configure" })).toHaveAttribute("aria-selected", "true")
     expect(document.getElementById("panel-configure")).not.toHaveAttribute("hidden")
+
+    await user.click(screen.getByRole("tab", { name: "Quote" }))
+    expect(document.getElementById("panel-quote")).not.toHaveAttribute("hidden")
+    expect(screen.getByTestId("quote-panel")).toHaveAttribute("data-dv", "dv_1")
   })
 
   it("feeds the Configure panel's live swatch + scale into the viewer", async () => {

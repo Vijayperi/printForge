@@ -8,6 +8,7 @@
  */
 import { getGenerationProvider } from "@/src/adapters/generation/factory"
 import { getGlbConverter } from "@/src/adapters/conversion/factory"
+import { getSlicer } from "@/src/adapters/slicer/factory"
 import { getAssetStorage } from "@/src/adapters/storage/factory"
 import { getEnv } from "@/src/config/env"
 import { getServiceDb } from "@/src/data/supabaseClients"
@@ -21,14 +22,16 @@ async function main(): Promise<void> {
   const clock = new SystemClock()
   const db = getServiceDb()
   const queue = new PostgresJobQueue(db, clock)
+  const storage = getAssetStorage()
   const deps: WorkerDeps = {
     db,
     queue,
     provider: getGenerationProvider(),
     clock,
     workerId: newId("job"),
-    storage: getAssetStorage(),
+    storage,
     converter: getGlbConverter(),
+    slicer: getSlicer(storage),
     appUrl: getEnv().APP_URL,
   }
 
