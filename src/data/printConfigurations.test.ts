@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   getConfiguration,
+  getConfigurationById,
   upsertConfiguration,
   type ConfigurationValues,
 } from "@/src/data/printConfigurations"
@@ -44,6 +45,28 @@ describe("getConfiguration", () => {
     fake.failNext({ message: "read boom" })
     const result = await getConfiguration(fake, "dv_1")
     expect(result.ok).toBe(false)
+  })
+})
+
+describe("getConfigurationById", () => {
+  it("returns the configuration a quote points at", async () => {
+    const fake = db([
+      { id: "cfg_1", design_version_id: "dv_1", created_at: "2026-01-01" },
+      { id: "cfg_2", design_version_id: "dv_1", created_at: "2026-01-05" },
+    ])
+    const result = await getConfigurationById(fake, "cfg_1")
+    expect(result.ok && result.value?.id).toBe("cfg_1")
+  })
+
+  it("returns null when the id is unknown", async () => {
+    const result = await getConfigurationById(db(), "cfg_none")
+    expect(result.ok && result.value).toBeNull()
+  })
+
+  it("propagates a read error", async () => {
+    const fake = db()
+    fake.failNext({ message: "read boom" })
+    expect((await getConfigurationById(fake, "cfg_1")).ok).toBe(false)
   })
 })
 

@@ -2,6 +2,7 @@ import "server-only"
 
 import {
   insertReturning,
+  maybeOneWhere,
   selectWhere,
   updateReturning,
   type Db,
@@ -32,6 +33,14 @@ export async function getConfiguration(
     ["design_version_id", designVersionId],
   ], { orderBy: "created_at", ascending: false })
   return rows.ok ? ok(rows.value[0] ?? null) : rows
+}
+
+/** A configuration by its own id — the way a quote points back at one. */
+export function getConfigurationById(
+  db: Db,
+  id: string
+): Promise<Result<PrintConfigurationRow | null>> {
+  return maybeOneWhere<PrintConfigurationRow>(db, TABLE, [["id", id]])
 }
 
 function toRow(values: ConfigurationValues) {

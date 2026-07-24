@@ -7,6 +7,7 @@ import {
   insertOrder,
   listOrdersByUser,
   updateOrderPaymentStatus,
+  updateOrderProviderSession,
   updateOrderStatus,
 } from "@/src/data/orders"
 import { isId } from "@/src/lib/ids"
@@ -113,6 +114,19 @@ describe("updateOrderStatus / updateOrderPaymentStatus", () => {
 
   it("fails when the order is absent", async () => {
     const result = await updateOrderStatus(db(), "ord_missing", "paid")
+    expect(!result.ok && result.error.code).toBe("not_found")
+  })
+})
+
+describe("updateOrderProviderSession", () => {
+  it("records the provider checkout session id", async () => {
+    const fake = db([{ id: "ord_1", user_id: "u1", provider_session_id: null, created_at: "1" }])
+    const result = await updateOrderProviderSession(fake, "ord_1", "cks_abc")
+    expect(result.ok && result.value.provider_session_id).toBe("cks_abc")
+  })
+
+  it("fails when the order is absent", async () => {
+    const result = await updateOrderProviderSession(db(), "ord_missing", "cks_abc")
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 })

@@ -1,0 +1,16 @@
+{
+  "business_id": "biz_mock",
+  "type": "dispute.opened",
+  "timestamp": "2026-07-26T09:00:00Z",
+  "data": {
+    "payload_type": "Dispute",
+    "dispute_id": "dis_2Lp7WcVt",
+    "payment_id": "pay_8Jw3nQx1Ab",
+    "business_id": "biz_mock",
+    "dispute_stage": "dispute",
+    "dispute_status": "dispute_opened",
+    "amount": "243.60",
+    "currency": "INR",
+    "created_at": "2026-07-26T08:59:40Z"
+  }
+}

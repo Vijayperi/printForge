@@ -391,3 +391,59 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   worker. **Full-suite e2e remains flaky under load** (dev-server slowness; plus a
   pre-existing S4 `projects.spec` strict-mode ambiguity unrelated to S12) — every S12/worker
   spec passes in isolation.
+
+## 2026-07-25 — S13 Phase A: order/payment machines, payments adapter, checkout session
+
+- **Dodo docs re-verified at S13 start** (plan §0 rule 4, §2.2) against
+  `docs.dodopayments.com/developer-resources/{checkout-session,webhooks}` plus the installed
+  `dodopayments@2.43.0` type definitions. Everything §2.2 asserts still holds: SDK client
+  `{ bearerToken, environment }`, `client.checkoutSessions.create(...) → { session_id,
+  checkout_url }` (single-use, 24 h), pay-what-you-want `amount` in minor units on the
+  `product_cart` item, `billing_address.country` as ISO 3166-1 alpha-2, and Standard Webhooks
+  headers `webhook-id` / `webhook-timestamp` / `webhook-signature`. **Two points of drift:**
+  1. **Refunds have no top-level `amount`.** `RefundCreateParams` is
+     `{ payment_id, items?, metadata?, reason? }`; a partial refund is expressed per line item
+     (`items: [{ item_id, amount }]`). The §4.4 interface is unchanged — `createRefund(ref,
+     amount?)` maps an amount onto the single catalog product, and omits `items` for a full
+     refund.
+  2. **The SDK now ships its own verifier** (`client.webhooks.unwrap` with a `webhookKey`
+     client option). We stay on `standardwebhooks` per §2.2: it is the same spec, and it is
+     the one path both the Dodo *and* mock providers can share (the mock signs with it too).
+- **`RELEASE_HOLD` is not in the order machine table.** Its target is the stored
+  `held_from_status`, which a `(state, event) → state` table cannot express. It ships as
+  `releaseHold(state, heldFrom)` beside `orderMachine`, asserted over the full
+  state × heldFrom matrix. `on_hold` therefore has no table entries at all, matching §4.3's
+  literal wording ("HOLD / CANCEL, any state paid..quality_check") — an operator releases a
+  hold before cancelling.
+- **`cancelled` stays terminal.** Phase B's "late `payment.succeeded` on a cancelled order"
+  case is handled by logging the webhook + an ops alert + an audit row, **not** by a
+  `cancelled → on_hold` transition, which §4.3 does not grant.
+- **`ORDER_CUSTOMER_LABELS` is total over `OrderState`.** §4.3 names labels for
+  paid..delivered only; `pending_payment` ("Confirming payment…"), `on_hold` and `cancelled`
+  get labels too so the order pages never fall back to a raw status string (test-asserted).
+- **Webhook timestamp tolerance is checked against the injected `Clock` first**, ahead of
+  `standardwebhooks`' own ±5 min check (which uses the system clock and cannot be injected).
+  Both windows are 5 minutes. Consequence for tests: payloads must be signed at real "now"
+  and only the injected clock may be moved.
+- **`verify()` returns the parsed body**, so a well-signed but non-JSON payload surfaces as
+  `validation`, not `unauthorized` — the two faults are genuinely different and are reported
+  separately.
+- **The mock provider emits Dodo-shaped payloads** (`{business_id, type, timestamp, data:
+  {payload_type, …}}`) signed with a fixed base64 dev key, so the Phase B `/mock-checkout`
+  page and E2E travel the *real* verification + normalization path. Session ids are
+  `cks_mock_{orderId}` so the dev page recovers the order without any store.
+- **Checkout body is `z.strictObject` at every level** — a client-supplied `amount`,
+  `amountMinor`, `total` or `currency` is a 400, never a silently dropped key. The amount is
+  re-read from the stored quote (test-asserted, plus `tests/unit/paymentInvariants.test.ts`
+  guarding Dodo-credential and Stripe leakage from the source tree).
+- **`return_url` is `${APP_URL}/orders/{orderId}`.** The plan sketched
+  `?session={session_id}`, but the session id only exists *after* creation and is persisted on
+  the order anyway; Dodo appends its own status params to the return URL.
+- **A failed `createCheckout` cancels the freshly created order** (`pending_payment
+  –PAYMENT_FAILED→ cancelled`) rather than leaving a zombie row. The quote stays `consumed`;
+  the customer re-quotes, which the S12 flow already self-heals.
+- **No migration needed.** The S4 `orders` table already has every column §4.5 requires
+  (`held_from_status`, `provider_session_id`, `payment_ref`, `frozen_dv_id`,
+  `frozen_config_json`); only a `provider_session_id` writer was added to `src/data/orders.ts`.
+- **Verified:** 1702 unit tests @ 100/100/100/100, `npm run verify` green. Phase A ships no
+  UI, no webhook route and no e2e — those are Phase B.

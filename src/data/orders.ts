@@ -69,6 +69,17 @@ export function updateOrderStatus(db: Db, id: string, status: string): Promise<R
   return updateReturning<OrderRow>(db, TABLE, { status }, [["id", id]])
 }
 
+/** Record the provider's checkout session id once the session has been created. */
+export function updateOrderProviderSession(
+  db: Db,
+  id: string,
+  providerSessionId: string
+): Promise<Result<OrderRow>> {
+  return updateReturning<OrderRow>(db, TABLE, { provider_session_id: providerSessionId }, [
+    ["id", id],
+  ])
+}
+
 export function updateOrderPaymentStatus(
   db: Db,
   id: string,
