@@ -185,6 +185,47 @@ describe("handleValidationRun — verdicts", () => {
     expect(!result.ok && result.error.code).toBe("internal")
   })
 
+  it("threads scaleFactor + scaleHash + profile + material from the payload (S11)", async () => {
+    const { deps, db } = makeDeps({})
+    // A 10 mm cube scaled ×30 → 300 mm exceeds the 220×220×250 build volume → fail.
+    const result = await handleValidationRun(deps, {
+      designVersionId: "dv_1",
+      scaleFactor: 30,
+      scaleHash: "s30",
+      printerProfileId: "generic-fdm",
+      materialId: "petg",
+    })
+    expect(result.ok).toBe(true)
+
+    const report = db.rows("validation_reports")[0]!
+    expect(report["scale_hash"]).toBe("s30")
+    expect(report["printer_profile_id"]).toBe("generic-fdm")
+    expect(report["status"]).toBe("fail")
+    expect((report["findings_json"] as { kind: string }[]).map((f) => f.kind)).toContain(
+      "exceeds_build_volume"
+    )
+  })
+
+  it("keys a re-validation at a new scale as a separate report (does not overwrite scale-1)", async () => {
+    const { deps, db } = makeDeps({
+      reportRows: [
+        {
+          id: "vr_base",
+          design_version_id: "dv_1",
+          printer_profile_id: DEFAULT_PRINTER_PROFILE_ID,
+          scale_hash: "",
+          status: "pass",
+          findings_json: [],
+          measurements_json: { boundingMm: { x: 10, y: 10, z: 10 } },
+        },
+      ],
+    })
+    await handleValidationRun(deps, { designVersionId: "dv_1", scaleFactor: 1.5, scaleHash: "s1.5" })
+    const reports = db.rows("validation_reports")
+    expect(reports).toHaveLength(2)
+    expect(reports.map((r) => r["scale_hash"]).sort()).toEqual(["", "s1.5"])
+  })
+
   it("replaces an existing report on re-run (idempotent)", async () => {
     const { deps, db } = makeDeps({
       reportRows: [

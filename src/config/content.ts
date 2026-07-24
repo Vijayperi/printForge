@@ -184,3 +184,55 @@ export const printabilityContent: {
     trapped_volume: { label: "Sealed cavity", explanation: "There’s an enclosed hollow that can trap uncured material or air." },
   },
 } as const
+
+/**
+ * Configure-tab copy (plan §6-S11). Plain-language descriptions for the quality,
+ * strength and shipping options live here, keyed by the catalog ids in
+ * `src/config/profiles.ts`. OWNER DECISION REQUIRED: real SLAs / surcharge copy.
+ */
+export const configurationContent = {
+  title: "Configure",
+  intro: "Set the size, material and finish for your print. Changes save automatically.",
+  measuringLabel: "We’re measuring your model — configuration will unlock in a moment.",
+  loadingLabel: "Loading configuration…",
+  size: {
+    label: "Size (longest side)",
+    unit: "mm",
+    help: "The model scales uniformly, so its proportions stay the same.",
+  },
+  material: { label: "Material" },
+  color: { label: "Colour", outOfStock: "Out of stock" },
+  quality: {
+    label: "Print quality",
+    options: {
+      standard: { name: "Standard", description: "Faster and cheaper. Good for most models." },
+      fine: { name: "Fine", description: "Finer layers and smoother surfaces. Slower and a little pricier." },
+    } as Record<string, { name: string; description: string }>,
+  },
+  strength: {
+    label: "Strength",
+    options: {
+      display: { name: "Display", description: "Light infill — best for models you’ll look at, not handle." },
+      everyday: { name: "Everyday", description: "Balanced infill for parts you’ll use and handle." },
+      reinforced: { name: "Reinforced", description: "Dense infill for functional, load-bearing parts." },
+    } as Record<string, { name: string; description: string }>,
+  },
+  shipping: {
+    label: "Shipping",
+    options: {
+      standard: { name: "Standard", description: "Our usual delivery speed." },
+      express: { name: "Express", description: "Prioritised production and faster delivery." },
+    } as Record<string, { name: string; description: string }>,
+  },
+  instructions: {
+    label: "Special instructions",
+    placeholder: "Anything we should know? (e.g. “please remove supports carefully”)",
+  },
+  textureDisclaimer:
+    "FDM prints show fine horizontal layer lines and won’t look glossy — colours are indicative.",
+  save: "Save",
+  saving: "Saving…",
+  saved: "Saved",
+  saveError: "Couldn’t save — please try again.",
+  revalidating: "Re-checking printability at the new size…",
+} as const

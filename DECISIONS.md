@@ -296,3 +296,50 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
 - **`tests/e2e/validation.spec.ts` is written but UNRUN this session** (Docker/
   Supabase down). Gated on `E2E_SUPABASE=1` + a running worker; covers clean→pass,
   holed→manual_review, oversized→fail.
+
+## 2026-07-24 — S11: print configuration UI
+
+- **Native form controls, not new Radix components.** The Configure tab uses a
+  native `<input type="range">` + numeric `<Input>` for size, native `<input
+  type="radio">` (visually-hidden + styled `<label>`) for colour/quality/strength,
+  and native `<select>` for material/shipping. This continues the S6/S7 precedent
+  (native `<select>`, toggle-button groups) — these are axe-clean, keyboard-native,
+  and fully coverable under jsdom without Radix pointer-event/portal shims. A future
+  UI redesign may swap in Radix Slider/RadioGroup if it can keep axe + 100% coverage.
+- **Configure/Printability are a two-tab strip below the viewer, both panels kept
+  mounted** (inactive one `hidden`). Keeping both mounted preserves the Configure
+  form state + the PrintabilityPanel poll across tab switches, and lets a size
+  change's re-validation surface on the Printability tab automatically. Tabs are a
+  hand-rolled ARIA `tablist`/`tab`/`tabpanel` (aria-selected/controls/labelledby) —
+  no Radix Tabs — so it stays axe-clean and coverable.
+- **Live viewer sync is lifted to `CreatorWorkspace`.** `ConfigurePanel` reports
+  `{ swatchColor, scaleFactor }` up via `onLiveChange` (event-driven, never
+  setState-in-effect); the workspace passes them to `WorkspaceViewer` →
+  `ViewerWorkspace`, so the 3D preview tracks colour + scale as the form changes.
+- **Re-validation fires only on a scale change** (plan §6-S11 step 3). The config
+  POST compares `scaleHash(new) !== scaleHash(prior ?? 1)` and, only then, enqueues
+  `validation.run` with the real `scaleFactor`/`scaleHash`/`printerProfileId`/
+  `materialId` and idempotency key `validate:{dvId}:{scaleHash}`. Colour/quality/
+  strength/shipping changes persist without re-validating. **Consequence:** because
+  the report is keyed `(dv, profile, scaleHash)` and material is NOT in the key, a
+  material change alone does not refresh `below_min_wall` — the report reflects the
+  material current at the last scale-triggering run. Accepted for S11; S12 pricing
+  re-reads the live config, and a future revision can add material to the trigger set.
+- **`scaleHash(sf) = "s" + round6(sf)`** — a stable, non-empty, human-readable key.
+  It doubles as validation-report `scale_hash`, the re-validation job idempotency
+  suffix (so re-running a scale de-dupes AND caches its report), and the client's
+  "which scaled report am I waiting for" signal (the validation GET now returns
+  `scaleHash`). The generation/upload paths omit it → default `""` (unchanged S9/S10).
+- **`ConfigurePanel` splits config-load and validation-poll into two effects.** The
+  saved config is a one-shot fetch; the base measurements come from a single-fetch,
+  self-rescheduling validation poll (mirrors `PrintabilityPanel`). A shared
+  `tryInit()` initialises the form exactly once when BOTH the config (or its absence)
+  and the base dims are known — whichever lands last — so no setState runs
+  synchronously in an effect. The size slider's max is clamped to what fits the build
+  volume (`sizeBounds`); the colour swatch grid shows in-stock colours only, but a
+  *saved* config referencing a since-out-of-stock colour surfaces an inline violation.
+- **S9/S10/S11 carry-overs all cleared this session** (Docker was up): `supabase
+  start` + `db reset` → 26 live integration tests pass (incl. S9 `validationRun`),
+  and `E2E_SUPABASE=1 npm run e2e` with a running worker → all 14 e2e pass, incl. the
+  previously-UNRUN `validation.spec.ts` (S10) and the new `configuration.spec.ts`
+  (S11: constraint matrix + resize re-check + per-DV persistence across reload).

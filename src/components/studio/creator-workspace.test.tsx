@@ -8,7 +8,14 @@ const refresh = vi.fn()
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }))
 
 vi.mock("@/src/viewer/ViewerWorkspace", () => ({
-  ViewerWorkspace: (props: { url: string }) => <div data-testid="viewer" data-url={props.url} />,
+  ViewerWorkspace: (props: { url: string; swatchColor?: string | null; scaleFactor?: number }) => (
+    <div
+      data-testid="viewer"
+      data-url={props.url}
+      data-swatch={props.swatchColor ?? ""}
+      data-scale={String(props.scaleFactor ?? 1)}
+    />
+  ),
 }))
 
 vi.mock("@/src/components/studio/creation-panel", () => ({
@@ -34,6 +41,16 @@ vi.mock("@/src/components/studio/stl-upload", () => ({
 vi.mock("@/src/components/studio/printability-panel", () => ({
   PrintabilityPanel: (props: { designVersionId: string }) => (
     <div data-testid="printability-panel" data-dv={props.designVersionId} />
+  ),
+}))
+
+vi.mock("@/src/components/studio/configure-panel", () => ({
+  ConfigurePanel: (props: { designVersionId: string; onLiveChange: (l: { swatchColor: string | null; scaleFactor: number }) => void }) => (
+    <div data-testid="configure-panel" data-dv={props.designVersionId}>
+      <button type="button" onClick={() => props.onLiveChange({ swatchColor: "#e8622c", scaleFactor: 2 })}>
+        fire-live
+      </button>
+    </div>
   ),
 }))
 
@@ -99,6 +116,32 @@ describe("CreatorWorkspace", () => {
     render(<CreatorWorkspace project={project} versions={[]} />)
     expect(screen.getByText("No model yet")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Refine selected" })).not.toBeInTheDocument()
+  })
+
+  it("switches between the Printability and Configure tabs", async () => {
+    const user = userEvent.setup()
+    render(<CreatorWorkspace project={project} versions={[designVersion({ id: "dv_1", generation_status: "ready", glb_asset_id: "ast_g" })]} />)
+
+    // Printability is the default active tab; the Configure panel is hidden but mounted.
+    expect(screen.getByRole("tab", { name: "Printability" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("tab", { name: "Configure" })).toHaveAttribute("aria-selected", "false")
+    expect(document.getElementById("panel-configure")).toHaveAttribute("hidden")
+    expect(screen.getByTestId("configure-panel")).toHaveAttribute("data-dv", "dv_1")
+
+    await user.click(screen.getByRole("tab", { name: "Configure" }))
+    expect(screen.getByRole("tab", { name: "Configure" })).toHaveAttribute("aria-selected", "true")
+    expect(document.getElementById("panel-configure")).not.toHaveAttribute("hidden")
+  })
+
+  it("feeds the Configure panel's live swatch + scale into the viewer", async () => {
+    const user = userEvent.setup()
+    render(<CreatorWorkspace project={project} versions={[designVersion({ id: "dv_1", generation_status: "ready", glb_asset_id: "ast_g" })]} />)
+    expect(screen.getByTestId("viewer")).toHaveAttribute("data-scale", "1")
+
+    await user.click(screen.getByRole("tab", { name: "Configure" }))
+    await user.click(screen.getByRole("button", { name: "fire-live" }))
+    expect(screen.getByTestId("viewer")).toHaveAttribute("data-swatch", "#e8622c")
+    expect(screen.getByTestId("viewer")).toHaveAttribute("data-scale", "2")
   })
 
   it("hides refine when the selected version has no brief", () => {

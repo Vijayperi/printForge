@@ -32,13 +32,16 @@ export async function GET(
   const report = await getLatestValidationReport(db, id)
   if (!report.ok) return jsonError(report.error)
   if (report.value === null) {
-    return Response.json({ status: "pending", findings: [], measurements: null }, { status: 200 })
+    return Response.json({ status: "pending", findings: [], measurements: null, scaleHash: null }, { status: 200 })
   }
   return Response.json(
     {
       status: report.value.status,
       findings: report.value.findings_json,
       measurements: report.value.measurements_json,
+      // Lets the Configure tab tell when a re-validation at the new scale has
+      // landed (its poll waits for this to match the scale it just saved).
+      scaleHash: report.value.scale_hash,
     },
     { status: 200 }
   )

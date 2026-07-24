@@ -25,10 +25,19 @@ export interface ValidationDeps {
   queue: JobQueue
 }
 
-/** S9/S10 analyze at scale 1 (empty scale hash); S11 threads real config scale. */
-const SCALE_FACTOR = 1
-
-const payloadSchema = z.object({ designVersionId: z.string().min(1) })
+/**
+ * S11 threads the configured scale + profile/material from the Configure route so
+ * the report re-evaluates size/wall constraints at the chosen scale. The
+ * generation/upload paths omit them, so the defaults reproduce the S9/S10
+ * behaviour: scale 1, empty scale hash, default printer + material.
+ */
+const payloadSchema = z.object({
+  designVersionId: z.string().min(1),
+  scaleFactor: z.number().positive().optional(),
+  scaleHash: z.string().optional(),
+  printerProfileId: z.string().optional(),
+  materialId: z.string().optional(),
+})
 
 /**
  * validation.run (plan §6-S9 step 4 + §6-S10 step 3): load the design version's
@@ -52,6 +61,10 @@ export async function handleValidationRun(
     return { ok: false, error: appError("validation", "invalid validation.run payload") }
   }
   const dvId = parsed.data.designVersionId
+  const scaleFactor = parsed.data.scaleFactor ?? 1
+  const profile = getPrinterProfile(parsed.data.printerProfileId)
+  const material = getMaterialProfile(parsed.data.materialId)
+  const scaleHash = parsed.data.scaleHash ?? ""
 
   const dvResult = await getDesignVersion(deps.db, dvId)
   if (!dvResult.ok) return dvResult
@@ -76,12 +89,12 @@ export async function handleValidationRun(
   const { verdict, findings } =
     analysis.measurements === null
       ? { verdict: "fail" as Verdict, findings: analysis.findings }
-      : buildReport(analysis.findings, analysis.measurements, getPrinterProfile(), getMaterialProfile(), SCALE_FACTOR)
+      : buildReport(analysis.findings, analysis.measurements, profile, material, scaleFactor)
 
   const key: ReportKey = {
     designVersionId: dvId,
-    printerProfileId: getPrinterProfile().id,
-    scaleHash: "",
+    printerProfileId: profile.id,
+    scaleHash,
   }
   const persisted = await upsertValidationReport(deps.db, key, {
     status: verdict,

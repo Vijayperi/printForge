@@ -1,8 +1,9 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useCallback, useState } from "react"
+import { useCallback, useState, type ReactNode } from "react"
 
+import { ConfigurePanel, type LiveConfig } from "@/src/components/studio/configure-panel"
 import { CreationPanel } from "@/src/components/studio/creation-panel"
 import { PrintabilityPanel } from "@/src/components/studio/printability-panel"
 import { StlUpload } from "@/src/components/studio/stl-upload"
@@ -10,6 +11,8 @@ import { VersionHistory } from "@/src/components/studio/version-history"
 import { WorkspaceViewer } from "@/src/components/studio/workspace-viewer"
 import { Button } from "@/src/components/ui/button"
 import type { DesignVersionRow, ProjectRow, StructuredBrief } from "@/src/domain/types"
+
+const NEUTRAL_LIVE: LiveConfig = { swatchColor: null, scaleFactor: 1 }
 
 function defaultVersion(versions: DesignVersionRow[]): DesignVersionRow | null {
   return versions.find((version) => version.generation_status === "ready") ?? versions[0] ?? null
@@ -31,6 +34,8 @@ export function CreatorWorkspace({
     brief: null,
     key: 0,
   })
+  const [tab, setTab] = useState<"printability" | "configure">("printability")
+  const [live, setLive] = useState<LiveConfig>(NEUTRAL_LIVE)
 
   const selected =
     versions.find((version) => version.id === selectedId) ?? defaultVersion(versions)
@@ -44,8 +49,40 @@ export function CreatorWorkspace({
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <section className="order-1 space-y-4 lg:order-2">
-        <WorkspaceViewer version={selected} projectTitle={project.title} />
-        {selected !== null ? <PrintabilityPanel key={selected.id} designVersionId={selected.id} /> : null}
+        <WorkspaceViewer
+          version={selected}
+          projectTitle={project.title}
+          swatchColor={live.swatchColor}
+          scaleFactor={live.scaleFactor}
+        />
+        {selected !== null ? (
+          <div className="space-y-3">
+            <div role="tablist" aria-label="Model details" className="flex gap-1 border-b">
+              <TabButton id="printability" active={tab === "printability"} onSelect={setTab}>
+                Printability
+              </TabButton>
+              <TabButton id="configure" active={tab === "configure"} onSelect={setTab}>
+                Configure
+              </TabButton>
+            </div>
+            <div
+              role="tabpanel"
+              id="panel-printability"
+              aria-labelledby="tab-printability"
+              hidden={tab !== "printability"}
+            >
+              <PrintabilityPanel key={selected.id} designVersionId={selected.id} />
+            </div>
+            <div
+              role="tabpanel"
+              id="panel-configure"
+              aria-labelledby="tab-configure"
+              hidden={tab !== "configure"}
+            >
+              <ConfigurePanel key={selected.id} designVersionId={selected.id} onLiveChange={setLive} />
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="order-2 space-y-8 lg:order-1">
@@ -81,5 +118,33 @@ export function CreatorWorkspace({
         </div>
       </section>
     </div>
+  )
+}
+
+function TabButton({
+  id,
+  active,
+  onSelect,
+  children,
+}: {
+  id: "printability" | "configure"
+  active: boolean
+  onSelect: (id: "printability" | "configure") => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      id={`tab-${id}`}
+      aria-selected={active}
+      aria-controls={`panel-${id}`}
+      onClick={() => onSelect(id)}
+      className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+        active ? "border-primary text-foreground" : "border-transparent text-muted-foreground"
+      }`}
+    >
+      {children}
+    </button>
   )
 }

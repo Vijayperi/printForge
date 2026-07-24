@@ -17,9 +17,13 @@ function Placeholder({ title, body }: { title: string; body: string }) {
 export function WorkspaceViewer({
   version,
   projectTitle,
+  swatchColor = null,
+  scaleFactor = 1,
 }: {
   version: DesignVersionRow | null
   projectTitle: string
+  swatchColor?: string | null
+  scaleFactor?: number
 }) {
   if (version === null) {
     return (
@@ -30,7 +34,14 @@ export function WorkspaceViewer({
     )
   }
   if (version.generation_status === "ready" && version.glb_asset_id !== null) {
-    return <ViewerWorkspace url={`/api/assets/${version.glb_asset_id}`} projectTitle={projectTitle} />
+    return (
+      <ViewerWorkspace
+        url={`/api/assets/${version.glb_asset_id}`}
+        projectTitle={projectTitle}
+        swatchColor={swatchColor}
+        scaleFactor={scaleFactor}
+      />
+    )
   }
   if (version.generation_status === "failed") {
     return (

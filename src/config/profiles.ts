@@ -99,8 +99,15 @@ export const strengthPresets: StrengthPreset[] = [
   { id: "reinforced", name: "Reinforced", infillPct: 50, materialFactor: 1.4 },
 ]
 
+// OWNER DECISION REQUIRED: shipping carriers, real SLAs and surcharges (S12 prices these).
+export const SHIPPING_SPEEDS = ["standard", "express"] as const
+export type ShippingSpeed = (typeof SHIPPING_SPEEDS)[number]
+
 export const DEFAULT_PRINTER_PROFILE_ID = "generic-fdm"
 export const DEFAULT_MATERIAL_ID = "pla"
+export const DEFAULT_QUALITY_ID = "standard"
+export const DEFAULT_STRENGTH_ID = "everyday"
+export const DEFAULT_SHIPPING_SPEED: ShippingSpeed = "standard"
 
 export function getPrinterProfile(id: string = DEFAULT_PRINTER_PROFILE_ID): PrinterProfile {
   return printerProfiles.find((p) => p.id === id) ?? (printerProfiles[0] as PrinterProfile)

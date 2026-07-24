@@ -53,18 +53,19 @@ describe("GET validation report", () => {
   it("200 pending when no report exists yet", async () => {
     const res = await GET(req, ctx)
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ status: "pending", findings: [], measurements: null })
+    expect(await res.json()).toEqual({ status: "pending", findings: [], measurements: null, scaleHash: null })
   })
 
-  it("200 with the latest report's verdict, findings and measurements", async () => {
+  it("200 with the latest report's verdict, findings, measurements and scaleHash", async () => {
     db = seed([
-      { id: "vr_old", design_version_id: "dv_1", status: "pass", findings_json: [], measurements_json: null, created_at: "2026-01-01" },
+      { id: "vr_old", design_version_id: "dv_1", status: "pass", findings_json: [], measurements_json: null, scale_hash: "", created_at: "2026-01-01" },
       {
         id: "vr_new",
         design_version_id: "dv_1",
         status: "manual_review",
         findings_json: [{ kind: "boundary_holes", severity: "warning", detail: "x", count: 4 }],
         measurements_json: { volumeCm3: 1 },
+        scale_hash: "s2",
         created_at: "2026-02-01",
       },
     ])
@@ -74,5 +75,6 @@ describe("GET validation report", () => {
     expect(body.status).toBe("manual_review")
     expect(body.findings[0].kind).toBe("boundary_holes")
     expect(body.measurements.volumeCm3).toBe(1)
+    expect(body.scaleHash).toBe("s2")
   })
 })
