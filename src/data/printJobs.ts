@@ -9,7 +9,14 @@ const TABLE = "print_jobs"
 
 export function insertPrintJob(
   db: Db,
-  input: { orderId: string; printerId?: string; status?: string; gcodeAssetId?: string }
+  input: {
+    orderId: string
+    printerId?: string
+    status?: string
+    gcodeAssetId?: string
+    /** Which print of this order this is; a fresh job is the first attempt. */
+    attempt?: number
+  }
 ): Promise<Result<PrintJobRow>> {
   return insertReturning<PrintJobRow>(db, TABLE, {
     id: newId("pj"),
@@ -17,6 +24,7 @@ export function insertPrintJob(
     printer_id: input.printerId ?? null,
     status: input.status ?? "pending",
     gcode_asset_id: input.gcodeAssetId ?? null,
+    attempt: input.attempt ?? 1,
   } as PrintJobRow)
 }
 
@@ -35,10 +43,11 @@ export function updatePrintJobStatus(
   db: Db,
   id: string,
   status: string,
-  opts?: { failureReason?: string }
+  opts?: { failureReason?: string | null; attempt?: number }
 ): Promise<Result<PrintJobRow>> {
   const values: Partial<PrintJobRow> = { status }
   if (opts?.failureReason !== undefined) values.failure_reason = opts.failureReason
+  if (opts?.attempt !== undefined) values.attempt = opts.attempt
   return updateReturning<PrintJobRow>(db, TABLE, values, [["id", id]])
 }
 

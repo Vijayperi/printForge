@@ -548,3 +548,46 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   the one failure is the **pre-existing dev-server load flakiness** — every worker-dependent spec
   passes in isolation, and which spec drops varies between runs. No ops e2e yet: that is Phase B
   step 5.
+
+## S14 Phase B1 — print-job controls, shipment API (server half)
+
+- **The attempt cap counts prints of the ORDER, not retries of one job.** §6-S14 step 4 says
+  "retry failed … attempt+1, cap 3". Taken literally that caps retries of a single `print_jobs`
+  row, which a reprint after a failed quality check would sidestep entirely — QC failure sends
+  the order back to `production_queued`, where an operator queues a *new* job. Since a reprint
+  costs a machine hour exactly like a retry does, `nextAttemptNumber` reads the highest attempt
+  the order has spent and both paths (`…/retry` and creating a new job) refuse past
+  `MAX_PRINT_ATTEMPTS`. Cancelled jobs are skipped: a job cancelled before it printed cost
+  nothing and shouldn't spend one of the three.
+- **A QC pass does not transition the order.** §4.3 spells the transition "QC_PASSED **+ tracking
+  added** → shipped", so `POST …/qc` with `pass` records the result and answers
+  `awaitingShipment: true` while the order waits in `quality_check`. Only `POST …/shipment`,
+  which writes the shipment row first, moves it to `shipped` — an order can never be shipped
+  without the tracking number the customer is about to be told to use.
+- **No manual print-progress controls.** Nothing in S14 fires `RELEASE`/`STARTED`/`COMPLETED`:
+  release is gated on the dispatch guard and the printer gateway, both S15. Rather than build a
+  manual "mark it printed" override that S15's status poller immediately obsoletes, the
+  `retry`/`cancel`/`qc` routes exist and are guard-tested, and become reachable in the live flow
+  when S15 lands. Phase B2's ops e2e therefore seeds the `quality_check` leg of the journey.
+- **The print fleet is seeded by migration, not by a TypeScript config.** §6-S14 step 4 says
+  "Select from `printers` seeded via config"; the ops UI reads the fleet from the table and S15
+  will key per-printer gateway credentials off these ids, so a parallel copy in application code
+  could only drift. `20260725000003_seed_printers.sql` inserts three machines with stable ids and
+  `on conflict (id) do nothing`, so re-seeding a database never duplicates the fleet.
+  OWNER DECISION REQUIRED before launch: the real machines.
+- **Mandatory reason on every print-job action, none on shipment.** The Done-when for S14 is
+  "every ops action writes an AuditEvent with actor + reason", so create/assign/retry/cancel/qc
+  all take one. `POST …/shipment` does not: §4.6 fixes that body as `{carrier, trackingNumber}`,
+  and the carrier and tracking number *are* the record of what happened.
+- **A cancelled print job does not touch the order.** It stays queued for production, ready for
+  a new job. Cancelling the *order* is the review route's `reject`, which also refunds.
+- **`src/lib/opsRoute.ts`** factors out `jsonError` + `parseJsonBody` — the front half of six
+  near-identical routes. The four Phase A ops routes keep their inline copies; they behave
+  identically and rewriting them was not worth the churn in a half-session.
+- **The shipped notification is keyed by shipment id**, not order id, so a reshipped order sends
+  a second real notification rather than being swallowed as a duplicate. (`notification.send`
+  still has no handler until S16 — it only queues.)
+- **Verified:** 2262 unit tests @ 100/100/100/100, `npm run verify` green (typecheck, lint,
+  coverage, build); `supabase db reset` applies the seed migration and the three printers are in
+  the table; 45 live integration tests still green. One flake seen and dismissed: the
+  100k-triangle geometry **perf** assertion fails under a loaded machine and passes in isolation.

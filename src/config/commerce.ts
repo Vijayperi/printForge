@@ -65,3 +65,31 @@ export const INDIAN_STATES = [
 ] as const
 
 export type IndianState = (typeof INDIAN_STATES)[number]
+
+/**
+ * Carriers an operator may ship an order with (plan §6-S14 step 4). The `id` is
+ * what we persist on `shipments.carrier`; the label is what customer and
+ * operator both read.
+ *
+ * OWNER DECISION REQUIRED: confirm the accounts PrintForge actually holds, and
+ * add each carrier's tracking-URL template before the customer order page can
+ * link a tracking number out.
+ */
+export const SHIPPING_CARRIERS = [
+  { id: "delhivery", label: "Delhivery" },
+  { id: "blue_dart", label: "Blue Dart" },
+  { id: "india_post", label: "India Post" },
+  { id: "dtdc", label: "DTDC" },
+] as const
+
+export type CarrierId = (typeof SHIPPING_CARRIERS)[number]["id"]
+
+export const CARRIER_IDS = SHIPPING_CARRIERS.map((c) => c.id) as unknown as [
+  CarrierId,
+  ...CarrierId[],
+]
+
+/** Display name for a stored `shipments.carrier`, falling back to the raw id. */
+export function carrierLabel(id: string): string {
+  return SHIPPING_CARRIERS.find((c) => c.id === id)?.label ?? id
+}

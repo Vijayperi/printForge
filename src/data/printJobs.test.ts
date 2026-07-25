@@ -25,20 +25,23 @@ describe("insertPrintJob", () => {
       expect(result.value.printer_id).toBeNull()
       expect(result.value.status).toBe("pending")
       expect(result.value.gcode_asset_id).toBeNull()
+      expect(result.value.attempt).toBe(1)
     }
   })
 
-  it("honors provided printer, status, and gcode asset", async () => {
+  it("honors provided printer, status, gcode asset and attempt", async () => {
     const fake = db()
     const result = await insertPrintJob(fake, {
       orderId: "ord_1",
       printerId: "prn_1",
       status: "released",
       gcodeAssetId: "ast_1",
+      attempt: 2,
     })
     expect(result.ok && result.value.printer_id).toBe("prn_1")
     expect(result.ok && result.value.status).toBe("released")
     expect(result.ok && result.value.gcode_asset_id).toBe("ast_1")
+    expect(result.ok && result.value.attempt).toBe(2)
   })
 })
 
@@ -75,6 +78,19 @@ describe("updatePrintJobStatus", () => {
     const result = await updatePrintJobStatus(fake, "pj_1", "failed", { failureReason: "nozzle jam" })
     expect(result.ok && result.value.status).toBe("failed")
     expect(result.ok && result.value.failure_reason).toBe("nozzle jam")
+  })
+
+  it("clears the failure reason and counts the attempt on a retry", async () => {
+    const fake = db([
+      { id: "pj_1", order_id: "ord_1", status: "failed", failure_reason: "jam", attempt: 1 },
+    ])
+    const result = await updatePrintJobStatus(fake, "pj_1", "pending", {
+      failureReason: null,
+      attempt: 2,
+    })
+    expect(result.ok && result.value.status).toBe("pending")
+    expect(result.ok && result.value.failure_reason).toBeNull()
+    expect(result.ok && result.value.attempt).toBe(2)
   })
 })
 
