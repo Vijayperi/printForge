@@ -22,7 +22,7 @@ import {
 } from "@/src/domain/stateMachines/order"
 import type { OrderRow } from "@/src/domain/types"
 import { PostgresJobQueue, type JobQueue } from "@/src/jobs/queue"
-import { SystemClock } from "@/src/lib/clock"
+import { SystemClock, type Clock } from "@/src/lib/clock"
 import { appError, toHttpError, type AppError } from "@/src/lib/errors"
 import { ok, type Result } from "@/src/lib/result"
 
@@ -47,6 +47,7 @@ type ProcessingResult =
 interface Deps {
   db: Db
   queue: JobQueue
+  clock: Clock
 }
 
 /**
@@ -164,6 +165,7 @@ async function handleSucceeded(
     const recorded = await applyPaymentOutcome(deps.db, order.id, {
       paymentStatus: paidAxis,
       paymentRef: event.paymentRef,
+      paidAt: deps.clock.now().toISOString(),
     })
     if (!recorded.ok) return recorded
     const alerted = await alertOps(deps, {
@@ -185,6 +187,9 @@ async function handleSucceeded(
     status: settlement.status,
     paymentStatus: paidAxis,
     paymentRef: event.paymentRef,
+    // Stamped here rather than defaulted in SQL: the ops board's due date is
+    // measured from the moment payment CONFIRMED, not from order creation.
+    paidAt: deps.clock.now().toISOString(),
   })
   if (!updated.ok) return updated
 
@@ -386,7 +391,8 @@ export async function POST(request: Request): Promise<Response> {
   const event = verified.value
 
   const db = getServiceDb()
-  const deps: Deps = { db, queue: new PostgresJobQueue(db, new SystemClock()) }
+  const clock = new SystemClock()
+  const deps: Deps = { db, queue: new PostgresJobQueue(db, clock), clock }
 
   const claim = await claimEvent(db, event.eventId, payloadForStorage(rawBody))
   if (!claim.ok) return processingFailure(claim.error)

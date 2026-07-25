@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   insertReturning,
   maybeOneWhere,
+  selectPage,
   selectWhere,
   updateReturning,
   type Db,
@@ -161,6 +162,75 @@ describe("updateReturning", () => {
     const db = seededDb()
     db.failNext({ message: "boom" })
     const result = await updateReturning<TRow>(db, "things", { name: "x" }, [["id", "a"]])
+    expect(!result.ok && result.error.code).toBe("provider_error")
+  })
+})
+
+describe("selectPage", () => {
+  function paged(count: number) {
+    const rows = Array.from({ length: count }, (_, i) => ({
+      id: `r${String(i).padStart(2, "0")}`,
+      user_id: "u1",
+      name: `row ${i}`,
+      created_at: `2026-01-${String(i + 1).padStart(2, "0")}`,
+    }))
+    return createFakeDb({ things: { rows, unique: ["id"] } })
+  }
+
+  it("returns exactly one page and reports that more exist", async () => {
+    const result = await selectPage<TRow>(paged(10), "things", [], {
+      orderBy: "created_at",
+      page: 0,
+      pageSize: 4,
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.rows.map((r) => r.id)).toEqual(["r00", "r01", "r02", "r03"])
+    expect(result.value.hasMore).toBe(true)
+  })
+
+  it("reports no more rows on the last page", async () => {
+    const result = await selectPage<TRow>(paged(6), "things", [], {
+      orderBy: "created_at",
+      page: 1,
+      pageSize: 4,
+    })
+    expect(result.ok && result.value.rows.map((r) => r.id)).toEqual(["r04", "r05"])
+    expect(result.ok && result.value.hasMore).toBe(false)
+  })
+
+  it("orders descending when asked", async () => {
+    const result = await selectPage<TRow>(paged(3), "things", [], {
+      orderBy: "created_at",
+      ascending: false,
+      page: 0,
+      pageSize: 3,
+    })
+    expect(result.ok && result.value.rows.map((r) => r.id)).toEqual(["r02", "r01", "r00"])
+  })
+
+  it("applies equality and range restrictions in the database", async () => {
+    const result = await selectPage<TRow>(
+      paged(10),
+      "things",
+      [
+        ["user_id", "eq", "u1"],
+        ["created_at", "lte", "2026-01-03"],
+        ["created_at", "gte", "2026-01-02"],
+      ],
+      { orderBy: "created_at", page: 0, pageSize: 10 }
+    )
+    expect(result.ok && result.value.rows.map((r) => r.id)).toEqual(["r01", "r02"])
+  })
+
+  it("maps errors", async () => {
+    const db = paged(3)
+    db.failNext({ message: "boom" })
+    const result = await selectPage<TRow>(db, "things", [], {
+      orderBy: "created_at",
+      page: 0,
+      pageSize: 2,
+    })
     expect(!result.ok && result.error.code).toBe("provider_error")
   })
 })

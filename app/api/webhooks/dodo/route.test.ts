@@ -238,6 +238,8 @@ describe("POST /api/webhooks/dodo — payment.succeeded", () => {
     expect(row.status).toBe("production_queued")
     expect(row.payment_status).toBe("paid")
     expect(row.payment_ref).toBe("pay_1")
+    // The ops board measures its due date from payment, not order creation.
+    expect(Date.parse(row.paid_at as string)).not.toBeNaN()
     expect(auditActions(db)).toEqual(["payment.succeeded"])
     expect(jobTemplates(db)).toEqual(["order_receipt"])
   })
@@ -281,6 +283,7 @@ describe("POST /api/webhooks/dodo — payment.succeeded", () => {
     expect(row.status).toBe("cancelled")
     expect(row.payment_status).toBe("paid")
     expect(row.payment_ref).toBe("pay_1")
+    expect(Date.parse(row.paid_at as string)).not.toBeNaN()
     expect(jobTemplates(db)).toEqual(["ops_late_payment"])
   })
 

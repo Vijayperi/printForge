@@ -76,3 +76,30 @@ export async function upsertValidationReport(
     ...values,
   } as ValidationReportRow)
 }
+
+/** Every report sitting in one state — the operator manual-review queue (plan §6-S14 step 3). */
+export function listValidationReportsByStatus(
+  db: Db,
+  status: string
+): Promise<Result<ValidationReportRow[]>> {
+  return selectWhere<ValidationReportRow>(db, TABLE, [["status", status]], {
+    orderBy: "created_at",
+    ascending: true,
+  })
+}
+
+export function getValidationReport(
+  db: Db,
+  id: string
+): Promise<Result<ValidationReportRow | null>> {
+  return maybeOneWhere<ValidationReportRow>(db, TABLE, [["id", id]])
+}
+
+/** Move a report to a new verdict. Callers resolve the target via `validationMachine`. */
+export function updateValidationReportStatus(
+  db: Db,
+  id: string,
+  status: string
+): Promise<Result<ValidationReportRow>> {
+  return updateReturning<ValidationReportRow>(db, TABLE, { status }, [["id", id]])
+}

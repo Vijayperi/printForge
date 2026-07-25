@@ -181,6 +181,13 @@ describe("applyPaymentOutcome", () => {
     }
   })
 
+  it("stamps paid_at when the payment lands", async () => {
+    const result = await applyPaymentOutcome(orderRow(), "ord_1", {
+      paidAt: "2026-02-01T10:00:00.000Z",
+    })
+    expect(result.ok && result.value.paid_at).toBe("2026-02-01T10:00:00.000Z")
+  })
+
   it("records where a hold came from", async () => {
     const fake = orderRow()
     const result = await applyPaymentOutcome(fake, "ord_1", {

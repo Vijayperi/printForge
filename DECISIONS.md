@@ -498,3 +498,53 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   integration cases for the webhook route (34 integration total, 1 pre-existing cross-file
   flake in `generationFlow` — a stale `validation.run` job from another file gets claimed;
   passes alone); **all 17 Playwright specs green serially** with Supabase + worker.
+
+## 2026-07-25 — S14 Phase A: ops board, order detail, review workflow
+
+- **S14 is split into two half-sessions**, like S13, for token budget. Phase A is the *review*
+  half (§6-S14 steps 1–3): board, order detail, review workflow. Phase B is the *production*
+  half (steps 4–5): print-job controls, shipment form, ops Playwright journey.
+- **New: `orders.paid_at`** (migration `20260725000002`). §4.5 does not list it, but the board's
+  due date is "paid_at + SLA" and "due before X" has to be a server-side filter, so it cannot be
+  derived per row. Stamped by the payment webhook at the moment of confirmation — deliberately
+  not `created_at` and not a SQL default. Existing paid rows are backfilled from `created_at`.
+- **New: the `ops_orders` view**, a read model that flattens material, printer, current print-job
+  status, current verdict, amount and exception reason onto one row. The alternative was
+  PostgREST embedded joins plus JSON-path filters, which our narrow `Db` interface cannot express
+  and the fake db cannot emulate. A view keeps the route to plain equality/range filters. It is
+  `security_invoker = on`, so customer RLS still applies through it; the base schema's blanket
+  `service_role` grant ran before the view existed, so both grants are repeated in the migration.
+- **Exception-reason precedence** (encoded in the view, asserted in live integration):
+  `print_failed` > `dispute` > `manual_review` > `flagged`. A failed machine outranks a dispute
+  because it is the thing that stops production right now. `flagged` is the residual case: an
+  order on hold for a reason that is not a dispute, i.e. an operator hold.
+- **"Newest wins"** for both the print job and the validation report (lateral joins), so a retry
+  or a re-validation is what the board shows rather than the original.
+- **`Db` gained `lte`, `gte` and `range`**, plus a `selectPage` helper. Paging reads
+  `pageSize + 1` rows and reports the extra as `hasMore` instead of requesting an exact `count`,
+  which would cost a second scan on every keystroke. The fake db learned the same operations, and
+  `eq` now understands PostgREST's `column->>key` JSON path.
+- **Due dates are business days.** `shiftBusinessDays` skips Saturday and Sunday in both
+  directions, and `paidAtCutoffForDue` is its exact inverse so the SQL bound and the displayed
+  date always agree (test-asserted). OWNER DECISION REQUIRED: public holidays.
+- **The board is a plain GET form.** Filters live in the query string, so a filtered board is a
+  shareable URL, the back button works, and nothing about the filtering needs JavaScript.
+- **Operator notes are `audit_events` rows** (`action: 'order.note'`) rather than a new table.
+  That table is INSERT-only by trigger, so "append-only and attributed" is enforced by the
+  database instead of by convention — and no migration is needed.
+- **Rejecting refunds before it cancels.** If the provider refuses the refund the order stays in
+  `design_review` and the operator can retry, rather than being cancelled with the money still
+  held. The payment axis is NOT moved here: only the provider's `refund.succeeded` webhook may do
+  that (§6-S13), so we never mark money returned on our own say-so.
+- **Ops routes answer 404, never 403** (`requireOperator`), matching `decideRoute` from S3: the
+  ops surface does not confirm its own existence to a customer.
+- **Fixed a long-standing integration flake:** `npm run test:integration` now runs with
+  `--no-file-parallelism`. DB-backed test files share one Postgres and one job queue, so
+  `generationFlow`'s worker was claiming `validation.run` jobs enqueued by other files running
+  concurrently. That test also parks any already-pending jobs before enqueuing its own.
+- **Verified:** 2047 unit tests @ 100/100/100/100, `npm run verify` green; 45 live integration
+  (11 of them new, proving the view's SQL — the fake db cannot express lateral joins or the
+  exception CASE), green twice in a row. E2E: 16/17 on a full serial run with a fresh stack;
+  the one failure is the **pre-existing dev-server load flakiness** — every worker-dependent spec
+  passes in isolation, and which spec drops varies between runs. No ops e2e yet: that is Phase B
+  step 5.

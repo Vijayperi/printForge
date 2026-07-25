@@ -110,6 +110,7 @@ export function applyPaymentOutcome(
     paymentStatus?: string
     paymentRef?: string
     heldFromStatus?: string | null
+    paidAt?: string
   }
 ): Promise<Result<OrderRow>> {
   const values: Partial<OrderRow> = {}
@@ -117,5 +118,6 @@ export function applyPaymentOutcome(
   if (patch.paymentStatus !== undefined) values.payment_status = patch.paymentStatus
   if (patch.paymentRef !== undefined) values.payment_ref = patch.paymentRef
   if (patch.heldFromStatus !== undefined) values.held_from_status = patch.heldFromStatus
+  if (patch.paidAt !== undefined) values.paid_at = patch.paidAt
   return updateReturning<OrderRow>(db, TABLE, values, [["id", id]])
 }

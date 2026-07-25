@@ -17,7 +17,11 @@ interface TableState {
  * In-memory, PostgREST-shaped fake implementing the `Db` interface for
  * repository unit tests (plan §6-S4). Supports the exact chain operations the
  * db.ts helpers use: insert().select().single(), select().eq().order().limit(),
- * select().eq().maybeSingle(), update().eq().select().single(), delete().eq().
+ * select().eq().maybeSingle(), update().eq().select().single(), delete().eq(),
+ * and (S14) select().eq/lte/gte().order().range() for the paged ops board.
+ *
+ * `eq` also understands PostgREST's `column->>key` JSON path, so a view column
+ * can be filtered the same way in tests as it is in Postgres.
  */
 export type RpcHandler = (args: Record<string, unknown>) => DbResponse<unknown>
 
@@ -104,15 +108,27 @@ export class FakeDb implements Db {
 }
 
 type Op = "select" | "insert" | "update" | "delete"
+type Comparison = "eq" | "lte" | "gte"
+
+/** Read a column, resolving PostgREST's `column->>key` JSON path form. */
+function readColumn(row: Row, column: string): unknown {
+  const arrow = column.indexOf("->>")
+  if (arrow === -1) return row[column]
+  const container = row[column.slice(0, arrow)]
+  if (typeof container !== "object" || container === null) return undefined
+  return (container as Record<string, unknown>)[column.slice(arrow + 3)]
+}
 
 class FakeBuilder<R> implements FilterBuilder<R>, TableBuilder<R> {
   private op: Op = "select"
   private insertRow: Row | null = null
   private updateValues: Row | null = null
-  private filters: Array<[string, unknown]> = []
+  private filters: Array<[string, Comparison, unknown]> = []
   private orderBy: string | null = null
   private ascending = true
   private limitN: number | null = null
+  private rangeFrom: number | null = null
+  private rangeTo = 0
 
   constructor(
     private readonly state: TableState,
@@ -141,7 +157,23 @@ class FakeBuilder<R> implements FilterBuilder<R>, TableBuilder<R> {
   }
 
   eq(column: string, value: unknown): FilterBuilder<R> {
-    this.filters.push([column, value])
+    this.filters.push([column, "eq", value])
+    return this
+  }
+
+  lte(column: string, value: unknown): FilterBuilder<R> {
+    this.filters.push([column, "lte", value])
+    return this
+  }
+
+  gte(column: string, value: unknown): FilterBuilder<R> {
+    this.filters.push([column, "gte", value])
+    return this
+  }
+
+  range(from: number, to: number): FilterBuilder<R> {
+    this.rangeFrom = from
+    this.rangeTo = to
     return this
   }
 
@@ -157,7 +189,14 @@ class FakeBuilder<R> implements FilterBuilder<R>, TableBuilder<R> {
   }
 
   private matches(row: Row): boolean {
-    return this.filters.every(([c, v]) => row[c] === v)
+    return this.filters.every(([column, op, value]) => {
+      const actual = readColumn(row, column)
+      if (op === "eq") return actual === value
+      if (actual === null || actual === undefined) return false
+      return op === "lte"
+        ? (actual as never) <= (value as never)
+        : (actual as never) >= (value as never)
+    })
   }
 
   private execute(): { rows: Row[]; error: DbError | null } {
@@ -210,6 +249,7 @@ class FakeBuilder<R> implements FilterBuilder<R>, TableBuilder<R> {
         return (av! < bv! ? -1 : 1) * dir
       })
     }
+    if (this.rangeFrom !== null) result = result.slice(this.rangeFrom, this.rangeTo + 1)
     if (this.limitN !== null) result = result.slice(0, this.limitN)
     return { rows: result, error: null }
   }

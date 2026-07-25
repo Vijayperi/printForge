@@ -13,7 +13,6 @@ vi.mock("@/src/adapters/auth/factory", () => ({
 }))
 
 import OpsLayout from "@/app/(ops)/layout"
-import OpsHomePage from "@/app/(ops)/ops/page"
 import { err, ok } from "@/src/lib/result"
 import { appError } from "@/src/lib/errors"
 
@@ -40,12 +39,5 @@ describe("OpsLayout", () => {
     render(await OpsLayout({ children: <p>ops content</p> }))
     expect(screen.getByText(new RegExp(`${role}@x.com \\(${role}\\)`))).toBeInTheDocument()
     expect(screen.getByText("ops content")).toBeInTheDocument()
-  })
-})
-
-describe("OpsHomePage", () => {
-  it("renders the placeholder", () => {
-    render(<OpsHomePage />)
-    expect(screen.getByRole("heading", { name: "Operations dashboard" })).toBeInTheDocument()
   })
 })

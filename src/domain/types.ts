@@ -154,6 +154,34 @@ export interface OrderRow extends Timestamps {
   payment_ref: string | null
   frozen_dv_id: string
   frozen_config_json: Record<string, unknown>
+  /** When the payment webhook confirmed the order; drives the ops due date. */
+  paid_at: string | null
+}
+
+/**
+ * One row of the `ops_orders` read-model view (S14 migration): the order plus
+ * the flattened material / printer / verdict / exception the board filters on.
+ */
+export interface OpsOrderRow {
+  id: string
+  user_id: string
+  status: string
+  payment_status: string
+  held_from_status: string | null
+  paid_at: string | null
+  created_at: string
+  quote_id: string
+  frozen_dv_id: string
+  payment_ref: string | null
+  customer_name: string | null
+  customer_email: string | null
+  material_id: string | null
+  amount_minor: number | null
+  print_job_id: string | null
+  printer_id: string | null
+  print_job_status: string | null
+  validation_status: string | null
+  exception_reason: string | null
 }
 
 export interface PrinterRow extends Timestamps {

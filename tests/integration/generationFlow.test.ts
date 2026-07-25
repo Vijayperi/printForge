@@ -52,6 +52,18 @@ describe.skipIf(!RUN)("generation flow (Supabase)", () => {
     const insertProject = await customer.from("projects").insert({ id: projectId, user_id: userId, title: "Gen" })
     expect(insertProject.error).toBeNull()
 
+    // The worker below claims the next job of ANY handled type, so jobs left
+    // pending by other integration files would be picked up instead of ours and
+    // fail against unrelated data. Park everything already queued out of reach
+    // first — this test owns the queue for its duration.
+    const parking = createClient(URL, SERVICE, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    await parking
+      .from("jobs")
+      .update({ run_at: new Date(Date.now() + 86_400_000).toISOString() })
+      .eq("status", "pending")
+
     // 2. Enqueue via the transactional RPC (checks auth.uid()).
     const enqueue = await customer.rpc("enqueue_generation", {
       p_project_id: projectId,

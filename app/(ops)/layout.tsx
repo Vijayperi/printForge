@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { getAuthGateway } from "@/src/adapters/auth/factory"
@@ -12,8 +13,18 @@ export default async function OpsLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen">
       <header className="border-b bg-muted/40">
-        <Container className="flex h-12 items-center text-sm font-medium">
-          PrintForge Operations — signed in as {user.value.email} ({user.value.role})
+        <Container className="flex h-12 items-center justify-between text-sm font-medium">
+          <span className="flex items-center gap-4">
+            <Link href="/ops" className="hover:underline">
+              Orders
+            </Link>
+            <Link href="/ops/reviews" className="hover:underline">
+              Review queue
+            </Link>
+          </span>
+          <span className="text-muted-foreground">
+            PrintForge Operations — signed in as {user.value.email} ({user.value.role})
+          </span>
         </Container>
       </header>
       <main>

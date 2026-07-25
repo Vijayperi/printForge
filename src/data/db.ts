@@ -19,8 +19,14 @@ export type DbResponse<T> = { data: T; error: DbError | null }
 export interface FilterBuilder<Row>
   extends PromiseLike<DbResponse<Row[]>> {
   eq(column: string, value: unknown): FilterBuilder<Row>
+  /** Inclusive upper bound — used by the ops board's "due before" filter. */
+  lte(column: string, value: unknown): FilterBuilder<Row>
+  /** Inclusive lower bound. */
+  gte(column: string, value: unknown): FilterBuilder<Row>
   order(column: string, opts?: { ascending?: boolean }): FilterBuilder<Row>
   limit(count: number): FilterBuilder<Row>
+  /** Inclusive row window, PostgREST-style: range(0, 24) is the first 25 rows. */
+  range(from: number, to: number): FilterBuilder<Row>
   select(columns?: string): FilterBuilder<Row>
   single(): PromiseLike<DbResponse<Row | null>>
   maybeSingle(): PromiseLike<DbResponse<Row | null>>
@@ -76,6 +82,37 @@ export async function selectWhere<Row>(
   const { data, error } = await query
   if (error !== null) return err(toAppError(error))
   return ok(data)
+}
+
+/** An equality, upper-bound or lower-bound restriction on one column. */
+export type Restriction = readonly [column: string, op: "eq" | "lte" | "gte", value: unknown]
+
+export interface Page<Row> {
+  rows: Row[]
+  /** True when at least one more row exists past this page. */
+  hasMore: boolean
+}
+
+/**
+ * Select one page of rows under mixed equality/range restrictions. Reads
+ * `pageSize + 1` rows and reports the extra as `hasMore`, which is all the board
+ * needs for next/previous — and avoids an exact `count`, which costs a second
+ * scan on every keystroke.
+ */
+export async function selectPage<Row>(
+  db: Db,
+  table: string,
+  restrictions: readonly Restriction[],
+  opts: { orderBy: string; ascending?: boolean; page: number; pageSize: number }
+): Promise<Result<Page<Row>>> {
+  let query = db.from<Row>(table).select()
+  for (const [column, op, value] of restrictions) query = query[op](column, value)
+  const from = opts.page * opts.pageSize
+  const { data, error } = await query
+    .order(opts.orderBy, { ascending: opts.ascending ?? true })
+    .range(from, from + opts.pageSize)
+  if (error !== null) return err(toAppError(error))
+  return ok({ rows: data.slice(0, opts.pageSize), hasMore: data.length > opts.pageSize })
 }
 
 /** Select a single row matching all filters, or null when none match. */
