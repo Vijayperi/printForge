@@ -2,17 +2,20 @@ import { createClient } from "@supabase/supabase-js"
 import { expect, test, type Page } from "@playwright/test"
 
 /**
- * The operations journey end-to-end (plan §6-S14 step 5): a paid order is
- * approved, put on a printer, quality-checked and shipped by an operator, and
- * the customer sees Shipped with a tracking number.
+ * The operations journey end-to-end (plan §6-S14 step 5, §6-S15 step 4): a paid
+ * order is approved, put on a printer, released to it, quality-checked and
+ * shipped by an operator, and the customer sees Shipped with a tracking number.
  *
  * Two legs are seeded rather than driven, both deliberately:
  *  - the order lineage, because `checkout.spec.ts` already walks the whole
  *    prompt → pay path and repeating it here would only make this spec slower
  *    and flakier;
- *  - `printing → completed`, because nothing in S14 fires RELEASE/STARTED/
- *    COMPLETED — that is Session 15's poller, so there is no live way to reach
- *    a finished print yet. Release is asserted *disabled with its reason*.
+ *  - `printing → completed`. Release is now live, but the *poller* runs in the
+ *    worker process, which owns its own copy of the simulated fleet and so never
+ *    sees the print this browser started. Walking a mock print to completion
+ *    across two processes would need a shared fake, not a test; the poller's own
+ *    behaviour is covered by `tests/integration/printDispatch.test.ts` against
+ *    the real database.
  *
  * Requires the local Supabase stack (seeded users). Skipped unless E2E_SUPABASE=1.
  */
@@ -27,13 +30,17 @@ const CUSTOMER_EMAIL = "customer1@printforge.test"
 const OPERATOR_EMAIL = "operator@printforge.test"
 const PASSWORD = "printforge-dev-123"
 const PRINTER_NAME = "Bay 1 — Prusa MK4"
+const SECOND_PRINTER_NAME = "Bay 2 — Prusa MK4"
 const TRACKING = "BD-99001122"
 
 const client = createClient(URL, SERVICE, {
   auth: { persistSession: false, autoRefreshToken: false },
 })
 
-/** Seed a paid order awaiting design review, owned by the seeded customer. */
+/**
+ * Seed a paid order awaiting design review, owned by the seeded customer, with
+ * the sliced G-code the dispatch guard insists on before a release.
+ */
 async function seedOrder(): Promise<string> {
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
   const projectId = `proj_e2eops_${tag}`
@@ -41,6 +48,7 @@ async function seedOrder(): Promise<string> {
   const cfgId = `cfg_e2eops_${tag}`
   const quoteId = `qt_e2eops_${tag}`
   const orderId = `ord_e2eops_${tag}`
+  const gcodeId = `ast_e2eops_${tag}`
 
   await client.from("projects").insert({ id: projectId, user_id: CUSTOMER_UID, title: "Ops E2E" })
   await client.from("design_versions").insert({
@@ -105,7 +113,27 @@ async function seedOrder(): Promise<string> {
       specialInstructions: "",
     },
   })
+  await client.from("assets").insert({
+    id: gcodeId,
+    type: "gcode",
+    storage_key: `gcode/${tag}.gcode`,
+    checksum_sha256: "0".repeat(64),
+    bytes: 4096,
+    mime: "text/plain",
+  })
+  gcodeAssetIds.set(orderId, gcodeId)
   return orderId
+}
+
+/** The gcode asset seeded for each order, attached to its print job on creation. */
+const gcodeAssetIds = new Map<string, string>()
+
+/** Give the order's print job its sliced gcode, the way S12's slicing job will. */
+async function attachGcode(orderId: string): Promise<void> {
+  await client
+    .from("print_jobs")
+    .update({ gcode_asset_id: gcodeAssetIds.get(orderId) })
+    .eq("order_id", orderId)
 }
 
 /** Walk the print to `completed` the way Session 15's poller will. */
@@ -136,7 +164,9 @@ async function act(page: Page, name: string | RegExp, reason: string): Promise<v
 test.describe("ops production journey (Supabase)", () => {
   test.skip(process.env["E2E_SUPABASE"] !== "1", "requires local Supabase (set E2E_SUPABASE=1)")
 
-  test("approve → assign → quality check → ship, and the customer sees it", async ({ browser }) => {
+  test("approve → assign → release → quality check → ship, and the customer sees it", async ({
+    browser,
+  }) => {
     const orderId = await seedOrder()
 
     const opsContext = await browser.newContext()
@@ -163,12 +193,23 @@ test.describe("ops production journey (Supabase)", () => {
     // Scoped to the summary line: the same name is also an <option> in the picker.
     await expect(ops.locator("dd", { hasText: PRINTER_NAME })).toBeVisible({ timeout: 30_000 })
 
-    // 4. Release is drawn but inert until Session 15 — and says so.
-    const release = ops.getByRole("button", { name: "Release to printer" })
-    await expect(release).toBeDisabled()
-    await expect(ops.getByText(/release unlocks with the printer gateway/i)).toBeVisible()
+    // 4. Release is refused while the job has no sliced gcode, and says why.
+    await expect(ops.getByRole("button", { name: "Release to printer" })).toBeDisabled()
+    await expect(ops.getByText(/no sliced gcode to send/i)).toBeVisible()
 
-    // 5. The print finishes (seeded — see the file header), then QC passes.
+    // 5. With the gcode in place, release actually sends it to the machine.
+    await attachGcode(orderId)
+    await ops.reload()
+    await act(ops, "Release to printer", "bay 1 is warmed up")
+    await expect(ops.getByText("Released to printer")).toBeVisible({ timeout: 30_000 })
+
+    // The fleet view shows the machine holding this order.
+    await ops.goto("/ops/printers")
+    const bayOne = ops.locator("tr", { hasText: PRINTER_NAME })
+    await expect(bayOne.getByRole("link", { name: new RegExp(orderId) })).toBeVisible()
+    await ops.goto(`/ops/orders/${orderId}`)
+
+    // 6. The print finishes (seeded — see the file header), then QC passes.
     await finishPrint(orderId)
     await ops.reload()
     await expect(ops.getByText("Record the quality check before shipping.")).toBeVisible()
@@ -176,7 +217,7 @@ test.describe("ops production journey (Supabase)", () => {
     await act(ops, "QC pass", "dimensions and finish within tolerance")
     await expect(ops.getByLabel("Tracking number")).toBeVisible({ timeout: 30_000 })
 
-    // 6. Tracking is what actually ships the order.
+    // 7. Tracking is what actually ships the order.
     await ops.getByLabel("Carrier").selectOption("blue_dart")
     await ops.getByLabel("Tracking number").fill(TRACKING)
     await ops.getByRole("button", { name: "Mark shipped" }).click()
@@ -184,7 +225,7 @@ test.describe("ops production journey (Supabase)", () => {
       timeout: 30_000,
     })
 
-    // 7. The customer's own page reflects every step of it.
+    // 8. The customer's own page reflects every step of it.
     const customerContext = await browser.newContext()
     const customer = await customerContext.newPage()
     await signIn(customer, CUSTOMER_EMAIL)
@@ -199,6 +240,35 @@ test.describe("ops production journey (Supabase)", () => {
 
     await customerContext.close()
     await opsContext.close()
+  })
+
+  /**
+   * Cancelling a released job has to reach the machine, not just the database
+   * (plan §6-S15 step 4) — otherwise a printer keeps working on an order nobody
+   * is watching. Bay 2, so the journey test's hold on bay 1 is irrelevant.
+   */
+  test("cancelling a released job frees the machine", async ({ page }) => {
+    const orderId = await seedOrder()
+    await signIn(page, OPERATOR_EMAIL)
+    await page.goto(`/ops/orders/${orderId}`)
+
+    await act(page, "Approve", "looks good")
+    await act(page, "Queue a print", "approved for production")
+    await page.getByLabel("Printer").selectOption({ label: SECOND_PRINTER_NAME })
+    await act(page, "Assign", "bay 2 is free")
+    await attachGcode(orderId)
+    await page.reload()
+    await act(page, "Release to printer", "bay 2 is warmed up")
+    await expect(page.getByText("Released to printer")).toBeVisible({ timeout: 30_000 })
+
+    await act(page, "Cancel print", "customer asked for a different colour")
+    await expect(page.getByText("Cancelled")).toBeVisible({ timeout: 30_000 })
+
+    // The bay is free again, so the next print can be queued onto it.
+    await expect(page.getByRole("button", { name: "Queue a print" })).toBeEnabled()
+    await page.goto("/ops/printers")
+    const bayTwo = page.locator("tr", { hasText: SECOND_PRINTER_NAME })
+    await expect(bayTwo.getByText(/nothing loaded/i)).toBeVisible()
   })
 
   test("a customer cannot reach an operator order page", async ({ page }) => {

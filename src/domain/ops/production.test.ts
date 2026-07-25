@@ -14,12 +14,13 @@ import {
   qcAuditAction,
   qcPrintJob,
   qcRequestSchema,
-  RELEASE_DISABLED_REASON,
   retryPrintJob,
   shipmentRequestSchema,
   shipmentStage,
 } from "@/src/domain/ops/production"
 import type { PrintJobRow } from "@/src/domain/types"
+import { appError } from "@/src/lib/errors"
+import { err, ok } from "@/src/lib/result"
 
 function job(overrides: Partial<PrintJobRow> = {}): PrintJobRow {
   return {
@@ -254,17 +255,14 @@ describe("request schemas", () => {
   })
 })
 
-describe("RELEASE_DISABLED_REASON", () => {
-  it("explains that release is not built yet rather than blaming a precondition", () => {
-    expect(RELEASE_DISABLED_REASON).toMatch(/printer gateway/i)
-  })
-})
-
 describe("printJobControls", () => {
   const queued = { status: "production_queued", payment_status: "paid" }
+  /** The dispatch guard's verdict, which the caller evaluates and passes in. */
+  const dispatchable = ok(undefined)
+  const blocked = err(appError("precondition_failed", "this job has no printer assigned"))
 
   it("offers only an enabled create control before any job exists", () => {
-    const controls = printJobControls(queued, [])
+    const controls = printJobControls(queued, [], dispatchable)
     expect(controls.create).toEqual({ shown: true, disabledReason: null })
     for (const key of ["assign", "release", "retry", "cancel", "qc"] as const) {
       expect(controls[key]).toEqual({ shown: false, disabledReason: null })
@@ -272,17 +270,25 @@ describe("printJobControls", () => {
   })
 
   it("explains a disabled create control on an unpaid order", () => {
-    const controls = printJobControls({ ...queued, payment_status: "unpaid" }, [])
+    const controls = printJobControls({ ...queued, payment_status: "unpaid" }, [], dispatchable)
     expect(controls.create).toEqual({
       shown: true,
       disabledReason: "this order has not been paid",
     })
   })
 
+  it("passes the dispatch guard's refusal through to the release control", () => {
+    const controls = printJobControls(queued, [job({ status: "pending" })], blocked)
+    expect(controls.release).toEqual({
+      shown: true,
+      disabledReason: "this job has no printer assigned",
+    })
+  })
+
   it("offers assign, release and cancel on a pending job", () => {
-    const controls = printJobControls(queued, [job({ status: "pending" })])
+    const controls = printJobControls(queued, [job({ status: "pending" })], dispatchable)
     expect(controls.assign).toEqual({ shown: true, disabledReason: null })
-    expect(controls.release).toEqual({ shown: true, disabledReason: RELEASE_DISABLED_REASON })
+    expect(controls.release).toEqual({ shown: true, disabledReason: null })
     expect(controls.cancel.shown).toBe(true)
     expect(controls.create.disabledReason).toContain("still active")
     expect(controls.retry.shown).toBe(false)
@@ -290,7 +296,7 @@ describe("printJobControls", () => {
   })
 
   it("hides assign and release once the job is printing, but still allows cancel", () => {
-    const controls = printJobControls(queued, [job({ status: "printing" })])
+    const controls = printJobControls(queued, [job({ status: "printing" })], dispatchable)
     expect(controls.assign.shown).toBe(false)
     expect(controls.assign.disabledReason).toContain("cannot be moved")
     expect(controls.release.shown).toBe(false)
@@ -298,14 +304,16 @@ describe("printJobControls", () => {
   })
 
   it("offers retry on a failed job under the cap", () => {
-    const controls = printJobControls(queued, [job({ status: "failed", attempt: 2 })])
+    const controls = printJobControls(queued, [job({ status: "failed", attempt: 2 })], dispatchable)
     expect(controls.retry).toEqual({ shown: true, disabledReason: null })
   })
 
   it("shows retry disabled with the cap message on the last attempt", () => {
-    const controls = printJobControls(queued, [
-      job({ status: "failed", attempt: MAX_PRINT_ATTEMPTS }),
-    ])
+    const controls = printJobControls(
+      queued,
+      [job({ status: "failed", attempt: MAX_PRINT_ATTEMPTS })],
+      dispatchable
+    )
     expect(controls.retry.shown).toBe(true)
     expect(controls.retry.disabledReason).toContain(`cap ${MAX_PRINT_ATTEMPTS}`)
   })
@@ -313,14 +321,15 @@ describe("printJobControls", () => {
   it("offers the quality check on a completed job once the order is awaiting one", () => {
     const controls = printJobControls(
       { status: "quality_check", payment_status: "paid" },
-      [job({ status: "completed" })]
+      [job({ status: "completed" })],
+      dispatchable
     )
     expect(controls.qc).toEqual({ shown: true, disabledReason: null })
     expect(controls.cancel.shown).toBe(false)
   })
 
   it("shows the quality check disabled when the order is not in quality_check", () => {
-    const controls = printJobControls(queued, [job({ status: "completed" })])
+    const controls = printJobControls(queued, [job({ status: "completed" })], dispatchable)
     expect(controls.qc.shown).toBe(true)
     expect(controls.qc.disabledReason).toContain("not awaiting a quality check")
   })

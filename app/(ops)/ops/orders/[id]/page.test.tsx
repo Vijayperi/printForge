@@ -48,6 +48,7 @@ vi.mock("@/src/components/ops/print-job-panel", () => ({
         .filter(([, control]) => control.shown)
         .map(([name]) => name)
         .join(",")}
+      data-release-reason={props.controls["release"]?.disabledReason ?? ""}
     />
   ),
 }))
@@ -169,9 +170,28 @@ function jobRow(overrides: Record<string, unknown> = {}): Record<string, unknown
     status: "pending",
     attempt: 1,
     failure_reason: null,
+    gcode_asset_id: null,
+    gateway_job_ref: null,
     created_at: "2026-01-05",
     ...overrides,
   }
+}
+
+/** A quote and report that satisfy the dispatch guard (plan §6-S15 step 3). */
+const CONSUMED_QUOTE = {
+  id: "qt_1",
+  status: "consumed",
+  amount_minor: 24360,
+  breakdown_json: [],
+  slice_json: { materialGrams: 20, durationMinutes: 90 },
+  created_at: "1",
+}
+const PASSING_REPORT = {
+  id: "vr_1",
+  design_version_id: "dv_1",
+  status: "pass",
+  findings_json: [],
+  created_at: "2026-01-02",
 }
 
 /** An audit row on a print job, as the quality check writes it. */
@@ -365,6 +385,37 @@ describe("OpsOrderDetailPage — production", () => {
     expect(panel).toHaveAttribute("data-latest", "pj_1")
     expect(panel).toHaveAttribute("data-printer", "Forge Two")
     expect(panel).toHaveAttribute("data-next-attempt", "2")
+  })
+
+  /**
+   * The release control is driven by the dispatch guard (plan §6-S15 step 3),
+   * which the page evaluates from rows the panel never sees.
+   */
+  it("enables release once every dispatch precondition holds", async () => {
+    db = seed({
+      order: { status: "production_queued" },
+      printJobs: [jobRow({ printer_id: "prn_2", gcode_asset_id: "ast_gcode" })],
+      quotes: [CONSUMED_QUOTE],
+      reports: [PASSING_REPORT],
+    })
+    render(await OpsOrderDetailPage(ctx))
+    const panel = screen.getByTestId("print-jobs")
+    expect(panel.getAttribute("data-shown")).toContain("release")
+    expect(panel).toHaveAttribute("data-release-reason", "")
+  })
+
+  it("explains a blocked release with the guard's own reason", async () => {
+    db = seed({
+      order: { status: "production_queued" },
+      printJobs: [jobRow({ printer_id: "prn_2" })],
+      quotes: [CONSUMED_QUOTE],
+      reports: [PASSING_REPORT],
+    })
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("print-jobs")).toHaveAttribute(
+      "data-release-reason",
+      "this job has no sliced gcode to send"
+    )
   })
 
   it("leaves the printer blank while the job is unassigned", async () => {

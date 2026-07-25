@@ -1,8 +1,9 @@
+import type { PrinterGatewayState } from "@/src/domain/types"
 import { appError } from "@/src/lib/errors"
 import { err, ok, type Result } from "@/src/lib/result"
 
 /** What a machine is doing right now, normalized across gateway kinds (plan §4.4). */
-export type PrinterGatewayState = "idle" | "busy" | "offline" | "error"
+export type { PrinterGatewayState }
 
 export interface PrinterGatewayStatus {
   state: PrinterGatewayState

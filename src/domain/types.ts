@@ -184,6 +184,14 @@ export interface OpsOrderRow {
   exception_reason: string | null
 }
 
+/**
+ * What a machine is doing right now, as reported by a printer gateway (plan
+ * §4.4). It lives here rather than in the adapter because the domain reasons
+ * about these states (`src/domain/printDispatch.ts`) and may not import the
+ * gateway — printers are reachable only from the worker and the release route.
+ */
+export type PrinterGatewayState = "idle" | "busy" | "offline" | "error"
+
 export interface PrinterRow extends Timestamps {
   id: string
   name: string

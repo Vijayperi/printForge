@@ -19,14 +19,6 @@ import { err, ok, type Result } from "@/src/lib/result"
  */
 export const MAX_PRINT_ATTEMPTS = 3
 
-/**
- * Why the release button is inert in this session. Dispatch to a physical
- * printer is Session 15 (`src/adapters/printerGateway`); until it exists the ops
- * UI shows the control disabled *with this reason* rather than hiding it, so an
- * operator can tell "not built yet" apart from "blocked by a precondition".
- */
-export const RELEASE_DISABLED_REASON =
-  "Dispatch to printers is not enabled yet — release unlocks with the printer gateway."
 
 const reasonSchema = z.string().trim().min(1, "a reason is required").max(500)
 
@@ -211,16 +203,22 @@ function control(shown: boolean, guard: Result<unknown>): Control {
 
 /**
  * Which production controls an operator sees on an order, and why each inert one
- * is inert (plan §6-S14 step 4). Every rule lives here rather than in the panel:
- * the server decides what is legal, the client only draws it — and the same
- * guards run again inside the routes, so a stale page cannot do damage.
+ * is inert (plan §6-S14 step 4, §6-S15 step 4). Every rule lives here rather
+ * than in the panel: the server decides what is legal, the client only draws it —
+ * and the same guards run again inside the routes, so a stale page cannot do
+ * damage.
  *
  * The controls hang off the *latest* job, not the active one: a `completed` job
  * is no longer active but is exactly the one awaiting a quality check.
+ *
+ * `releaseGuard` is the dispatch preconditions guard (`src/domain/dispatchGuard`)
+ * already evaluated by the caller, which is the only rule here that needs rows
+ * this function is not given — the order's quote and validation report.
  */
 export function printJobControls(
   order: { status: string; payment_status: string },
-  jobs: readonly PrintJobRow[]
+  jobs: readonly PrintJobRow[],
+  releaseGuard: Result<unknown>
 ): PrintJobControls {
   const latest = jobs[0] ?? null
   if (latest === null) {
@@ -232,8 +230,7 @@ export function printJobControls(
   return {
     create: control(true, assertCanCreatePrintJob(order, jobs)),
     assign: control(latest.status === "pending", assertCanAssignPrinter(latest)),
-    // Release is drawn but never live in S14 — the printer gateway is S15.
-    release: { shown: latest.status === "pending", disabledReason: RELEASE_DISABLED_REASON },
+    release: control(latest.status === "pending", releaseGuard),
     retry: control(latest.status === "failed", retryPrintJob(latest)),
     cancel: { shown: printJobMachine.can(latest.status as PrintJobState, "CANCEL"), disabledReason: null },
     qc: control(

@@ -1,13 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
+import { PostgresJobQueue } from "@/src/jobs/queue"
+import { FixedClock } from "@/src/lib/clock"
 import { ok } from "@/src/lib/result"
 import { createFakeDb, type FakeDb } from "@/tests/helpers/fakeDb"
+import { fakeGateway, type MockPrinterGateway } from "@/tests/helpers/fakeGateway"
 
 const getUser = vi.fn()
 vi.mock("@/src/adapters/auth/factory", () => ({ getAuthGateway: vi.fn(async () => ({ getUser })) }))
 
 let db: FakeDb
 vi.mock("@/src/data/supabaseClients", () => ({ getServiceDb: vi.fn(() => db) }))
+
+let gateway: MockPrinterGateway
+vi.mock("@/src/jobs/dispatchDeps", () => ({
+  getDispatchDeps: () => ({
+    db,
+    gateway,
+    queue: new PostgresJobQueue(db, new FixedClock(new Date("2026-07-26T10:00:00Z"))),
+    clock: new FixedClock(new Date("2026-07-26T10:00:00Z")),
+  }),
+}))
 
 import { POST } from "@/app/api/ops/print-jobs/[id]/cancel/route"
 
@@ -20,6 +33,7 @@ const JOB = {
   status: "pending",
   printer_id: "prn_1",
   failure_reason: null,
+  gateway_job_ref: null,
   attempt: 1,
   created_at: "1",
 }
@@ -27,6 +41,12 @@ const JOB = {
 function seed(job: Record<string, unknown> = JOB) {
   return createFakeDb({
     print_jobs: { rows: [job], unique: ["id"] },
+    printers: {
+      rows: [
+        { id: "prn_1", name: "Bay 1", gateway_kind: "mock", current_state: "busy", created_at: "1" },
+      ],
+      unique: ["id"],
+    },
     audit_events: { rows: [], unique: ["id"] },
   })
 }
@@ -43,6 +63,7 @@ const VALID = { reason: "customer changed the colour" }
 beforeEach(() => {
   getUser.mockResolvedValue(ok(OPERATOR))
   db = seed()
+  gateway = fakeGateway()
 })
 
 afterEach(() => vi.clearAllMocks())
@@ -83,6 +104,37 @@ describe("POST …/cancel", () => {
       audit_events: { rows: [], unique: ["id"] },
     })
     expect((await POST(post(VALID), ctx)).status).toBe(404)
+  })
+
+  /**
+   * Plan §6-S15 step 4: cancelling a job that reached a machine has to stop the
+   * machine. Cancelling it only in our records would leave a printer working on
+   * an order nobody is watching.
+   */
+  it("stops the printer before cancelling a released job", async () => {
+    const released = await gateway.release({
+      printJobId: "pj_1",
+      printerId: "prn_1",
+      gcodeStorageKey: "gcode/pj_1.gcode",
+      idempotencyKey: "pj_1",
+    })
+    const ref = released.ok ? released.value.gatewayJobRef : ""
+    db = seed({ ...JOB, status: "released", gateway_job_ref: ref })
+
+    const response = await POST(post(VALID), ctx)
+    expect(response.status).toBe(200)
+    expect(gateway.wasCancelled(ref)).toBe(true)
+    expect(db.rows("printers")[0]).toMatchObject({ current_state: "idle" })
+    expect(db.rows("audit_events")[0]).toMatchObject({ metadata: { gatewayJobRef: ref } })
+  })
+
+  it("does not cancel the job when the printer refuses to stop", async () => {
+    db = seed({ ...JOB, status: "printing", gateway_job_ref: "mock-gw-never-issued" })
+
+    const response = await POST(post(VALID), ctx)
+    expect(response.status).toBe(404)
+    expect(db.rows("print_jobs")[0]?.status).toBe("printing")
+    expect(db.rows("audit_events")).toHaveLength(0)
   })
 
   it.each([

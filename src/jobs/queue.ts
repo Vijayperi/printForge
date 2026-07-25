@@ -15,6 +15,9 @@ export type JobType =
   | "validation.run"
   | "slicing.run"
   | "print.dispatch"
+  // Not in the plan's §4.4 list: the status poller needs its own type so the
+  // worker can claim polls without re-running a dispatch (see DECISIONS.md).
+  | "print.poll"
   | "notification.send"
 
 export interface ClaimedJob {

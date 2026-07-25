@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest"
 
-import type { GenerationProvider, GenerationStatus } from "@/src/adapters/generation"
 import { MockGlbConverter } from "@/src/adapters/conversion/mock"
+import type { GenerationProvider, GenerationStatus } from "@/src/adapters/generation"
+import { MockPrinterGateway } from "@/src/adapters/printerGateway/mock"
 import { MockSlicer } from "@/src/adapters/slicer/mock"
 import { InMemoryStorage } from "@/src/adapters/storage/memory"
 import type { ClaimedJob, JobQueue } from "@/src/jobs/queue"
 import {
   dispatch,
+  HANDLED_TYPES,
   retryableFromError,
   runLoop,
   runOnce,
@@ -54,6 +56,7 @@ function makeDeps(over: { queue?: JobQueue; provider?: GenerationProvider; rows?
     storage,
     converter: new MockGlbConverter(),
     slicer: new MockSlicer(storage),
+    gateway: new MockPrinterGateway(),
     appUrl: "http://localhost:3000",
   }
 }
@@ -108,6 +111,22 @@ describe("dispatch", () => {
   it("routes slicing.run to its handler", async () => {
     const result = await dispatch(makeDeps(), claimed({ type: "slicing.run", payload: {} }))
     expect(!result.ok && result.error.code).toBe("validation") // invalid payload reached the handler
+  })
+
+  it("routes print.dispatch to its handler", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "print.dispatch", payload: {} }))
+    expect(!result.ok && result.error.code).toBe("validation") // invalid payload reached the handler
+  })
+
+  it("routes print.poll to its handler", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "print.poll", payload: {} }))
+    expect(!result.ok && result.error.code).toBe("validation")
+  })
+
+  it("claims every job type it can handle", () => {
+    expect(HANDLED_TYPES).toContain("print.dispatch")
+    expect(HANDLED_TYPES).toContain("print.poll")
+    expect(HANDLED_TYPES).not.toContain("notification.send")
   })
 
   it("has no handler for unregistered job types", async () => {

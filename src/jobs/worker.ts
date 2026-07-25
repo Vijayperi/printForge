@@ -1,6 +1,7 @@
 import "server-only"
 
 import type { GlbConverter } from "@/src/adapters/conversion"
+import type { PrinterGateway } from "@/src/adapters/printerGateway"
 import type { Slicer } from "@/src/adapters/slicer"
 import type { AssetStorage } from "@/src/adapters/storage"
 import {
@@ -9,6 +10,8 @@ import {
   type GenerationDeps,
 } from "@/src/jobs/handlers/generation"
 import { handleAssetIngest } from "@/src/jobs/handlers/ingestion"
+import { handlePrintDispatch, type PrintDispatchDeps } from "@/src/jobs/handlers/printDispatch"
+import { handlePrintPoll } from "@/src/jobs/handlers/printPoll"
 import { handleSlicingRun } from "@/src/jobs/handlers/slicing"
 import { handleValidationRun } from "@/src/jobs/handlers/validation"
 import type { ClaimedJob, JobType } from "@/src/jobs/queue"
@@ -20,6 +23,7 @@ export interface WorkerDeps extends GenerationDeps {
   storage: AssetStorage
   converter: GlbConverter
   slicer: Slicer
+  gateway: PrinterGateway
   appUrl: string
 }
 
@@ -30,6 +34,8 @@ export const HANDLED_TYPES: JobType[] = [
   "asset.ingest",
   "validation.run",
   "slicing.run",
+  "print.dispatch",
+  "print.poll",
 ]
 
 const PERMANENT_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
@@ -69,9 +75,18 @@ export function dispatch(deps: WorkerDeps, job: ClaimedJob): Promise<Result<void
       )
     case "slicing.run":
       return handleSlicingRun({ db: deps.db, slicer: deps.slicer, clock: deps.clock }, job.payload)
+    case "print.dispatch":
+      return handlePrintDispatch(dispatchDeps(deps), job.payload)
+    case "print.poll":
+      return handlePrintPoll(dispatchDeps(deps), job.payload)
     default:
       return Promise.resolve(err(appError("not_found", `no handler for job type ${job.type}`)))
   }
+}
+
+/** The narrow slice of the worker's dependencies a printer job needs. */
+function dispatchDeps(deps: WorkerDeps): PrintDispatchDeps {
+  return { db: deps.db, gateway: deps.gateway, queue: deps.queue, clock: deps.clock }
 }
 
 export type RunOutcome =

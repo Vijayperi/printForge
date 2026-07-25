@@ -38,6 +38,19 @@ export const ACTIVE_PRINT_JOB_STATES: readonly PrintJobState[] = [
   "printing",
 ]
 
+/**
+ * The states in which a machine is actually holding the job's file — a `pending`
+ * job has been queued but nothing has been sent anywhere yet. These are exactly
+ * the states in the `print_jobs_active_printer_idx` partial unique index, which
+ * is the database half of the release interlock (plan §6-S15 step 2).
+ */
+export const HOLDING_PRINT_JOB_STATES: readonly PrintJobState[] = ["released", "printing"]
+
+/** Nothing more will happen to this job on its own. */
+export function isTerminalPrintJobState(status: string): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled"
+}
+
 /** Narrowing predicate over a raw `print_jobs.status` string. */
 export function isActivePrintJobState(status: string): boolean {
   return (ACTIVE_PRINT_JOB_STATES as readonly string[]).includes(status)

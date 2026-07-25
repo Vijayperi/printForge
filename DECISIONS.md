@@ -702,3 +702,70 @@ the `print.dispatch` handler, the status poller, the live release/cancel control
   check; the S13 invariant otherwise flags the file that exists to catch leaks.
 - **Verified:** 2494 unit tests @ 100/100/100/100, `npm run verify` green (exit 0, including the
   new bundle gate). No UI, API or integration surface changed in this phase.
+
+## S15 Phase B — dispatch job, status poller, live release and the fleet view
+
+**Date:** 2026-07-26. Completes S15 (§6-S15 steps 2 and 4).
+
+- **`print.poll` is a new job type, not in the plan's §4.4 list.** Step 4 asks for "a status poller job
+  (per active printer, 30 s runAt loop)" but §4.4's `JobType` union has no type for it. Re-dispatching
+  under `print.dispatch` would mean one handler doing two unrelated things, and the worker could not
+  claim polls without also claiming releases. `print.poll` was added to the union with a comment
+  pointing here. The interface is otherwise untouched.
+- **The loop is per *job*, not per printer**, keyed `print_poll:<jobId>:<n>` so each poll is its own
+  queue row (`jobs.idempotency_key` is unique, so a fixed key would dedupe the second poll away and
+  the loop would stop after one tick). A poll that finds the job still running books the next one 30 s
+  out; a terminal outcome books nothing. Nothing inside the handler reads a clock, so the whole
+  lifecycle is walkable by calling it.
+- **Release is synchronous, not queued.** Step 4 describes the handler; step 2 wants "busy/offline
+  printer → `precondition_failed` **with reason surfaced to ops**". Those two only fit together if the
+  operator's press runs the dispatch: `dispatchPrintJob` is shared by the route and the
+  `print.dispatch` job, so both take exactly the same path to a machine, and the route can answer 412
+  with the printer's own words. The job type remains for retries and automation.
+- **Routes reach the gateway through `src/jobs/dispatchDeps.ts`, never by importing it.** The ESLint
+  boundary from Phase A stays exactly as the plan specifies; `getDispatchDeps()` lives inside
+  `src/jobs/**` (one of the two allowed places) and hands back `{db, gateway, queue, clock}`, so the
+  release and cancel routes name dependencies rather than printers. It is `server-only`.
+- **Cancel now stops the machine before the database.** Step 4 gives ops a cancel control, and a
+  released job cancelled only in our records would leave a printer working on an order nobody is
+  watching. `cancelDispatchedJob` cancels through the gateway, then re-reads what the machine reports
+  rather than assuming it went idle (a cancel can leave a printer in `error`). If the machine refuses,
+  the job is *not* cancelled — the operator sees the refusal instead of a lie.
+- **An illegal order transition during a poll is not an error.** An operator may hold or cancel an
+  order while a machine is printing. The print's outcome is a physical fact and is always written to
+  the print job and the audit trail; the order is left where the operator put it, and the audit
+  metadata records `orderStatusUnchanged: true`. Dragging an order out of `on_hold` because a printer
+  finished would undo a human decision.
+- **`PrinterGatewayState` moved to `src/domain/types.ts`** (re-exported from the adapter, so §4.4's
+  interface reads unchanged). `src/domain/printDispatch.ts` reasons about these states and the domain
+  may not import the gateway — the states are a domain vocabulary that the adapter maps onto, not the
+  other way round.
+- **The mock fleet is memoized per process** (`resetMockFleet()` for tests). It *is* the state of the
+  machines; a fresh instance per request forgot the print it had just started, so releasing and then
+  cancelling a job failed in development. The real gateway keeps no state of its own (the printers do)
+  and is still built per call.
+- **`printJobControls` now takes the release verdict as an argument.** The guard needs the order's
+  quote and validation report, which the ops page already loads and the panel never sees; passing
+  `Result<unknown>` in keeps every enable rule in the domain and the page thin.
+  `RELEASE_DISABLED_REASON` is gone — release is live.
+- **`/ops/printers` reads the `printers` table, not the gateway.** The poller writes what each machine
+  reported; a page that asked the machines directly would be slow *and* put printer credentials one
+  import away from a React component (FR-9). Unrecognized `current_state` values are shown verbatim
+  rather than mislabelled.
+- **The e2e stops short of a poller-driven completion, deliberately.** Release is now driven live in
+  the browser, but the poller runs in the *worker* process, which owns its own copy of the simulated
+  fleet and never sees the print the web process started. Walking a mock print to completion across
+  two processes would need a shared fake rather than a test, so `printing → completed` stays seeded
+  and the poller is proven against the real database in `tests/integration/printDispatch.test.ts`.
+- **Integration tests must free the fleet between cases.** The release interlock is a Postgres unique
+  index, so a job an earlier test left `released` on bay 1 makes the next release fail with a
+  conflict. This was found the hard way — three tests failed with 409 — and is itself evidence the
+  index bites; `freeFleet()` in `beforeEach` now cancels anything still holding the seeded bays.
+- **Verified:** 2618 unit tests @ 100/100/100/100, `npm run verify` green (exit 0, bundle gate
+  included); 60 live integration tests green (52 existing + 8 new, covering the release → poll →
+  completed walk, the duplicate release answering 409, the DB interlock rejecting a second job on one
+  bay, cancel freeing the bay, a failed print requeuing the order plus exactly one `ops_print_failure`
+  job, and two guard refusals); `tests/e2e/ops.spec.ts` 3/3 green. The full serial e2e run was 18
+  passed / 2 failed (`quote.spec.ts`, `validation.spec.ts`) — both pass in isolation, the documented
+  load flake. The six "(Supabase + worker)" specs also need `npm run dev:worker` running; without it
+  they all fail, which is not a regression.

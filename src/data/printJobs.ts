@@ -1,9 +1,10 @@
 import "server-only"
 
 import { insertReturning, maybeOneWhere, selectWhere, updateReturning, type Db } from "@/src/data/db"
+import { HOLDING_PRINT_JOB_STATES } from "@/src/domain/stateMachines/printJob"
 import type { PrintJobRow } from "@/src/domain/types"
 import { newId } from "@/src/lib/ids"
-import type { Result } from "@/src/lib/result"
+import { ok, type Result } from "@/src/lib/result"
 
 const TABLE = "print_jobs"
 
@@ -43,12 +44,31 @@ export function updatePrintJobStatus(
   db: Db,
   id: string,
   status: string,
-  opts?: { failureReason?: string | null; attempt?: number }
+  opts?: { failureReason?: string | null; attempt?: number; gatewayJobRef?: string | null }
 ): Promise<Result<PrintJobRow>> {
   const values: Partial<PrintJobRow> = { status }
   if (opts?.failureReason !== undefined) values.failure_reason = opts.failureReason
   if (opts?.attempt !== undefined) values.attempt = opts.attempt
+  if (opts?.gatewayJobRef !== undefined) values.gateway_job_ref = opts.gatewayJobRef
   return updateReturning<PrintJobRow>(db, TABLE, values, [["id", id]])
+}
+
+/**
+ * Every job a machine is currently holding, newest first (the `/ops/printers`
+ * fleet view). The `Db` interface has no `in` filter, so this is one query per
+ * holding state — there are only two of them.
+ */
+export async function listHeldPrintJobs(db: Db): Promise<Result<PrintJobRow[]>> {
+  const rows: PrintJobRow[] = []
+  for (const status of HOLDING_PRINT_JOB_STATES) {
+    const page = await selectWhere<PrintJobRow>(db, TABLE, [["status", status]], {
+      orderBy: "created_at",
+      ascending: false,
+    })
+    if (!page.ok) return page
+    rows.push(...page.value)
+  }
+  return ok(rows)
 }
 
 export function assignPrinter(db: Db, id: string, printerId: string): Promise<Result<PrintJobRow>> {

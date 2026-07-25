@@ -21,6 +21,9 @@ export default async function OpsLayout({ children }: { children: React.ReactNod
             <Link href="/ops/reviews" className="hover:underline">
               Review queue
             </Link>
+            <Link href="/ops/printers" className="hover:underline">
+              Printers
+            </Link>
           </span>
           <span className="text-muted-foreground">
             PrintForge Operations — signed in as {user.value.email} ({user.value.role})

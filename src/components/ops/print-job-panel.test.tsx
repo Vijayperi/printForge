@@ -14,6 +14,8 @@ import {
 } from "@/src/components/ops/print-job-panel"
 import { MAX_PRINT_ATTEMPTS, printJobControls, type PrintJobControls } from "@/src/domain/ops/production"
 import type { PrintJobRow } from "@/src/domain/types"
+import { appError } from "@/src/lib/errors"
+import { err, ok, type Result } from "@/src/lib/result"
 
 const PRINTERS = [
   { id: "prn_1", name: "Forge One" },
@@ -49,8 +51,12 @@ function row(overrides: Partial<PrintJobRow> = {}): PrintJobRow {
 }
 
 /** Controls exactly as the page computes them, so the test cannot drift from the domain. */
-function controlsFor(orderStatus: string, jobs: PrintJobRow[]): PrintJobControls {
-  return printJobControls({ status: orderStatus, payment_status: "paid" }, jobs)
+function controlsFor(
+  orderStatus: string,
+  jobs: PrintJobRow[],
+  releaseGuard: Result<unknown> = ok(undefined)
+): PrintJobControls {
+  return printJobControls({ status: orderStatus, payment_status: "paid" }, jobs, releaseGuard)
 }
 
 function renderPanel(
@@ -91,6 +97,7 @@ describe("jobRequest", () => {
   it.each([
     ["create", "/api/ops/orders/ord_1/print-jobs", { reason: "because" }],
     ["assign", "/api/ops/print-jobs/pj_1/assign", { printerId: "prn_2", reason: "because" }],
+    ["release", "/api/ops/print-jobs/pj_1/release", { reason: "because" }],
     ["retry", "/api/ops/print-jobs/pj_1/retry", { reason: "because" }],
     ["cancel", "/api/ops/print-jobs/pj_1/cancel", { reason: "because" }],
     ["qc_pass", "/api/ops/print-jobs/pj_1/qc", { outcome: "pass", reason: "because" }],
@@ -138,16 +145,65 @@ describe("PrintJobPanel", () => {
     expect(screen.getAllByLabelText("Printer")).toHaveLength(1)
   })
 
-  it("draws the release control disabled, with the reason it is inert", () => {
+  it("offers release once the dispatch guard is satisfied", () => {
     renderPanel({
       latest: view(),
       controls: controlsFor("production_queued", [row({ status: "pending" })]),
     })
     const release = screen.getByRole("button", { name: /release to printer/i })
+    expect(release).toBeEnabled()
+    expect(release).not.toHaveAttribute("aria-describedby")
+  })
+
+  it("draws release disabled with the guard's reason when it cannot fire", () => {
+    renderPanel({
+      latest: view(),
+      controls: controlsFor(
+        "production_queued",
+        [row({ status: "pending" })],
+        err(appError("precondition_failed", "this job has no sliced gcode to send"))
+      ),
+    })
+    const release = screen.getByRole("button", { name: /release to printer/i })
     expect(release).toBeDisabled()
     const described = release.getAttribute("aria-describedby")
     expect(described).not.toBeNull()
-    expect(document.getElementById(described as string)?.textContent).toMatch(/printer gateway/i)
+    expect(document.getElementById(described as string)?.textContent).toBe(
+      "this job has no sliced gcode to send"
+    )
+  })
+
+  it("warns that the printer starts immediately before releasing", async () => {
+    const user = userEvent.setup()
+    renderPanel({
+      latest: view(),
+      controls: controlsFor("production_queued", [row({ status: "pending" })]),
+    })
+
+    await user.click(screen.getByRole("button", { name: /release to printer/i }))
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      /the printer starts as soon as you confirm/i
+    )
+  })
+
+  it("releases the job to its machine and refreshes", async () => {
+    const user = userEvent.setup()
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ status: "released" })))
+    vi.stubGlobal("fetch", fetchMock)
+
+    renderPanel({
+      latest: view(),
+      controls: controlsFor("production_queued", [row({ status: "pending" })]),
+    })
+    await user.click(screen.getByRole("button", { name: /release to printer/i }))
+    await user.type(screen.getByLabelText(/reason/i), "bay 1 is loaded")
+    await user.click(screen.getByRole("button", { name: "Confirm" }))
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/ops/print-jobs/pj_1/release",
+      expect.objectContaining({ body: JSON.stringify({ reason: "bay 1 is loaded" }) })
+    )
   })
 
   it("disables an inapplicable control and explains why", () => {

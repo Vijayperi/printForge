@@ -20,6 +20,7 @@ import { listShipmentsByOrder } from "@/src/data/shipments"
 import { getServiceDb } from "@/src/data/supabaseClients"
 import { getLatestValidationReport } from "@/src/data/validationReports"
 import { readFrozenConfig } from "@/src/domain/checkout/frozenConfig"
+import { assertDispatchable, dispatchFacts } from "@/src/domain/dispatchGuard"
 import { readStoredAddress, readStoredContact } from "@/src/domain/checkout/schema"
 import {
   hasQcPass,
@@ -98,6 +99,17 @@ export default async function OpsOrderDetailPage({
     latestJob === null ? null : await listAuditEventsByEntity(db, "print_job", latestJob.id)
   const qcPassed = jobAudits !== null && jobAudits.ok && hasQcPass(jobAudits.value)
   const shipment = shipments.ok ? (shipments.value[0] ?? null) : null
+
+  // Whether release may fire at all (plan §6-S15 step 3). The panel needs the
+  // reason, not just the verdict, and every fact is already loaded above.
+  const releaseGuard = assertDispatchable(
+    dispatchFacts({
+      order: order.value,
+      job: jobs[0] ?? { printer_id: null, gcode_asset_id: null },
+      quote: quote.ok ? quote.value : null,
+      report: report.ok ? report.value : null,
+    })
+  )
 
   const config = readFrozenConfig(order.value.frozen_config_json)
   const contact = readStoredContact(order.value.contact_json)
@@ -181,7 +193,7 @@ export default async function OpsOrderDetailPage({
             orderId={order.value.id}
             latest={latestJob}
             printers={fleet.map((printer) => ({ id: printer.id, name: printer.name }))}
-            controls={printJobControls(order.value, jobs)}
+            controls={printJobControls(order.value, jobs, releaseGuard)}
             nextAttempt={nextAttemptNumber(jobs)}
           />
 

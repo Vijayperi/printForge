@@ -32,12 +32,21 @@ export interface PrinterOption {
   name: string
 }
 
-export const JOB_ACTIONS = ["create", "assign", "retry", "cancel", "qc_pass", "qc_fail"] as const
+export const JOB_ACTIONS = [
+  "create",
+  "assign",
+  "release",
+  "retry",
+  "cancel",
+  "qc_pass",
+  "qc_fail",
+] as const
 export type JobAction = (typeof JOB_ACTIONS)[number]
 
 export const JOB_ACTION_LABELS: Record<JobAction, string> = {
   create: opsContent.createJob,
   assign: opsContent.assign,
+  release: opsContent.release,
   retry: opsContent.retry,
   cancel: opsContent.cancelJob,
   qc_pass: opsContent.qcPass,
@@ -58,6 +67,8 @@ export function jobRequest(
       return { url: `/api/ops/orders/${ctx.orderId}/print-jobs`, body: { reason: ctx.reason } }
     case "assign":
       return { url: `${job}/assign`, body: { printerId: ctx.printerId, reason: ctx.reason } }
+    case "release":
+      return { url: `${job}/release`, body: { reason: ctx.reason } }
     case "retry":
       return { url: `${job}/retry`, body: { reason: ctx.reason } }
     case "cancel":
@@ -211,6 +222,7 @@ export function PrintJobPanel({
       <div className="flex flex-wrap items-start gap-2">
         <ActionButton action="create" control={controls.create} onPick={setPending} />
         <ActionButton action="assign" control={controls.assign} onPick={setPending} />
+        <ActionButton action="release" control={controls.release} onPick={setPending} />
         <ActionButton action="retry" control={controls.retry} onPick={setPending} />
         <ActionButton
           action="cancel"
@@ -225,17 +237,6 @@ export function PrintJobPanel({
           variant="destructive"
           onPick={setPending}
         />
-
-        {controls.release.shown ? (
-          <div className="space-y-1">
-            <Button type="button" size="sm" disabled aria-describedby="job-reason-release">
-              {opsContent.release}
-            </Button>
-            <p id="job-reason-release" className="text-xs text-muted-foreground">
-              {controls.release.disabledReason}
-            </p>
-          </div>
-        ) : null}
       </div>
 
       <Dialog open={pending !== null} onOpenChange={(open) => !open && close()}>
@@ -246,7 +247,9 @@ export function PrintJobPanel({
               <DialogDescription>
                 {latest === null || pending === "create"
                   ? `This will be print ${nextAttempt} of ${MAX_PRINT_ATTEMPTS} for this order.`
-                  : "This is recorded against your account in the order’s audit trail."}
+                  : pending === "release"
+                    ? opsContent.releaseConfirm
+                    : "This is recorded against your account in the order’s audit trail."}
               </DialogDescription>
             </DialogHeader>
 

@@ -8,6 +8,7 @@
  */
 import { getGenerationProvider } from "@/src/adapters/generation/factory"
 import { getGlbConverter } from "@/src/adapters/conversion/factory"
+import { getPrinterGateway } from "@/src/adapters/printerGateway/factory"
 import { getSlicer } from "@/src/adapters/slicer/factory"
 import { getAssetStorage } from "@/src/adapters/storage/factory"
 import { getEnv } from "@/src/config/env"
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
     storage,
     converter: getGlbConverter(),
     slicer: getSlicer(storage),
+    gateway: getPrinterGateway(storage),
     appUrl: getEnv().APP_URL,
   }
 
