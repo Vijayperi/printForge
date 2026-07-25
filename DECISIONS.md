@@ -591,3 +591,46 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   coverage, build); `supabase db reset` applies the seed migration and the three printers are in
   the table; 45 live integration tests still green. One flake seen and dismissed: the
   100k-triangle geometry **perf** assertion fails under a loaded machine and passes in isolation.
+
+## S14 Phase B2 — ops production UI, customer tracking, ops e2e
+
+- **Native `<select>` for the printer and carrier pickers, not shadcn/Radix Select.** §6-S14 step 4
+  says "Select"; this follows the precedent already set by S11's ConfigurePanel and Phase A's board
+  filters. Radix's Select renders scroll-button subcomponents that cannot run under jsdom, so
+  adding it would force a coverage exclusion (see the S2 entry on adding components only as they
+  can be fully tested) to gain nothing an accessible native control does not already do.
+- **The disabled release control explains itself in text, not in a hover tooltip.** Step 5 says
+  "assert disabled with reason tooltip". A disabled button receives no pointer events, so a
+  Radix tooltip on it never opens — and hover-only text is unreachable by keyboard and screen
+  reader, which WCAG 2.2 AA does not allow for information this load-bearing. The control renders
+  disabled with `RELEASE_DISABLED_REASON` beside it, wired with `aria-describedby`. Every inert
+  production control uses the same pattern, so an operator always reads *why*.
+- **Shipment readiness is derived from the audit trail.** Because a QC pass deliberately changes
+  no row (see Phase B1), the `print_job.qc.pass` audit event is the only record that one happened.
+  `hasQcPass` reads it and `shipmentStage` turns it into `hidden | awaiting_qc | ready`; the ops
+  page issues one extra `listAuditEventsByEntity` query for the latest job, and only when a job
+  exists. Producer and reader share `qcAuditAction` so the action string cannot drift.
+- **`printJobControls` decides what an operator may do; the panel only draws it.** All six
+  enable/disable rules live in `src/domain/ops/production.ts` as one pure function returning
+  `{shown, disabledReason}` per control, and each route re-runs its own guard — so a stale page
+  can annoy an operator but cannot do damage (guiding principle 4: the server is the source of
+  truth, the client renders state).
+- **The controls hang off the *latest* job, not the active one.** A `completed` job is no longer
+  "active" by §4.3 but is exactly the job awaiting a quality check, so `activePrintJob` is the
+  wrong subject for the panel.
+- **The ops e2e seeds two legs rather than driving them:** the order lineage (checkout.spec.ts
+  already walks prompt → pay, and repeating it here would only add minutes and flakiness) and
+  `printing → completed` (nothing in S14 can reach a finished print — that is S15's poller, as
+  Phase B1 recorded). Release is asserted *disabled with its reason*, which is what step 5 asks
+  for. Role switching uses two browser contexts because the ops layout has no sign-out control.
+- **Verified:** 2331 unit tests @ 100/100/100/100, `npm run verify` green; 53 live integration
+  tests green (45 existing + 8 new covering the lifecycle, the attempt cap, retry clearing its
+  stale failure reason, a cancelled job not spending an attempt, and shipment writing tracking
+  before status + exactly one notification job); `tests/e2e/ops.spec.ts` green, and 18/19 on a
+  full serial e2e run — the one failure was `quote.spec.ts`, the **pre-existing** load flake,
+  which passes in isolation.
+- **Local-stack note (2026-07-25):** running `supabase start` with a cwd outside the project
+  brings up a SECOND stack whose project id is derived from that directory (here
+  `supabase_*_vijayperi`), and it steals ports 54321/54322 from the real `printforge` stack —
+  every integration test then fails against an empty database. Fix: `npx supabase stop
+  --project-id <stray> --no-backup`, then start again with `--workdir` pointing at `printforge/`.

@@ -4,20 +4,32 @@ import { ORDER_NOTE_ACTION } from "@/app/api/ops/orders/[id]/notes/route"
 import { OrderSummary } from "@/src/components/checkout/order-summary"
 import { PageHeader } from "@/src/components/layout/primitives"
 import { NotesThread, type OrderNote } from "@/src/components/ops/notes-thread"
+import { PrintJobPanel, type PrintJobView } from "@/src/components/ops/print-job-panel"
 import { ReviewActions } from "@/src/components/ops/review-actions"
+import { ShipmentForm } from "@/src/components/ops/shipment-form"
 import { Badge } from "@/src/components/ui/badge"
 import { opsContent } from "@/src/config/content"
 import { listAuditEventsByEntity } from "@/src/data/auditEvents"
 import { getDesignVersion } from "@/src/data/designVersions"
 import { listNotificationsByOrder } from "@/src/data/notificationLog"
 import { getOrder } from "@/src/data/orders"
+import { listPrinters } from "@/src/data/printers"
+import { listPrintJobsByOrder } from "@/src/data/printJobs"
 import { getQuote } from "@/src/data/quotes"
+import { listShipmentsByOrder } from "@/src/data/shipments"
 import { getServiceDb } from "@/src/data/supabaseClients"
 import { getLatestValidationReport } from "@/src/data/validationReports"
 import { readFrozenConfig } from "@/src/domain/checkout/frozenConfig"
 import { readStoredAddress, readStoredContact } from "@/src/domain/checkout/schema"
+import {
+  hasQcPass,
+  nextAttemptNumber,
+  printJobControls,
+  shipmentStage,
+} from "@/src/domain/ops/production"
 import { orderCustomerLabel, type OrderState } from "@/src/domain/stateMachines/order"
-import type { Finding } from "@/src/domain/types"
+import type { PrintJobState } from "@/src/domain/stateMachines/printJob"
+import type { Finding, PrintJobRow, PrinterRow } from "@/src/domain/types"
 import { requireOperator } from "@/src/lib/opsAuth"
 
 /** Audit rows that are operator notes, newest last so the thread reads forward. */
@@ -31,6 +43,19 @@ function notesFrom(rows: { id: string; action: string; metadata: Record<string, 
       createdAt: row.created_at,
     }))
     .reverse()
+}
+
+/** The latest print job, with its printer resolved to a name for display. */
+function latestJobView(jobs: PrintJobRow[], printers: PrinterRow[]): PrintJobView | null {
+  const latest = jobs[0]
+  if (latest === undefined) return null
+  return {
+    id: latest.id,
+    status: latest.status as PrintJobState,
+    attempt: latest.attempt,
+    printerName: printers.find((p) => p.id === latest.printer_id)?.name ?? null,
+    failureReason: latest.failure_reason,
+  }
 }
 
 /**
@@ -51,13 +76,28 @@ export default async function OpsOrderDetailPage({
   const order = await getOrder(db, id)
   if (!order.ok || order.value === null) notFound()
 
-  const [quote, dv, report, audits, notifications] = await Promise.all([
-    getQuote(db, order.value.quote_id),
-    getDesignVersion(db, order.value.frozen_dv_id),
-    getLatestValidationReport(db, order.value.frozen_dv_id),
-    listAuditEventsByEntity(db, "order", id),
-    listNotificationsByOrder(db, id),
-  ])
+  const [quote, dv, report, audits, notifications, printJobs, printers, shipments] =
+    await Promise.all([
+      getQuote(db, order.value.quote_id),
+      getDesignVersion(db, order.value.frozen_dv_id),
+      getLatestValidationReport(db, order.value.frozen_dv_id),
+      listAuditEventsByEntity(db, "order", id),
+      listNotificationsByOrder(db, id),
+      listPrintJobsByOrder(db, id),
+      listPrinters(db),
+      listShipmentsByOrder(db, id),
+    ])
+
+  const jobs = printJobs.ok ? printJobs.value : []
+  const fleet = printers.ok ? printers.value : []
+  const latestJob = latestJobView(jobs, fleet)
+
+  // A passing quality check writes no row — only an audit event (plan §6-S14
+  // step 4) — so the trail is the only place that can answer "may this ship?".
+  const jobAudits =
+    latestJob === null ? null : await listAuditEventsByEntity(db, "print_job", latestJob.id)
+  const qcPassed = jobAudits !== null && jobAudits.ok && hasQcPass(jobAudits.value)
+  const shipment = shipments.ok ? (shipments.value[0] ?? null) : null
 
   const config = readFrozenConfig(order.value.frozen_config_json)
   const contact = readStoredContact(order.value.contact_json)
@@ -135,6 +175,24 @@ export default async function OpsOrderDetailPage({
             orderId={order.value.id}
             state={order.value.status as OrderState}
             heldFrom={order.value.held_from_status as OrderState | null}
+          />
+
+          <PrintJobPanel
+            orderId={order.value.id}
+            latest={latestJob}
+            printers={fleet.map((printer) => ({ id: printer.id, name: printer.name }))}
+            controls={printJobControls(order.value, jobs)}
+            nextAttempt={nextAttemptNumber(jobs)}
+          />
+
+          <ShipmentForm
+            orderId={order.value.id}
+            stage={shipmentStage(order.value.status, qcPassed)}
+            shipment={
+              shipment === null
+                ? null
+                : { carrier: shipment.carrier, trackingNumber: shipment.tracking_number }
+            }
           />
 
           <section aria-labelledby="ops-payment-heading" className="space-y-1 text-sm">

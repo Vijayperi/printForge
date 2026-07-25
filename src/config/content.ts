@@ -302,6 +302,12 @@ export const ordersContent = {
   placedLabel: "Placed",
   totalLabel: "Total",
   viewOrder: "View order",
+  trackingHeading: "Tracking",
+  trackingCarrierLabel: "Carrier",
+  trackingNumberLabel: "Tracking number",
+  // OWNER DECISION REQUIRED: per-carrier tracking URL templates, so this can
+  // become a link instead of a number the customer copies by hand.
+  trackingNote: "Track this shipment on the carrier’s website using the number above.",
 } as const
 
 /** Operations dashboard copy (plan §6-S14). Internal-facing, so no OWNER review needed. */
@@ -352,4 +358,22 @@ export const opsContent = {
   queueEmpty: "Nothing is waiting for review.",
   queueApprove: "Approve for printing",
   queueReject: "Reject",
+  productionHeading: "Production",
+  productionEmpty: "No print has been queued for this order yet.",
+  createJob: "Queue a print",
+  attemptLabel: "Print",
+  printerLabel: "Printer",
+  assign: "Assign",
+  release: "Release to printer",
+  retry: "Retry",
+  cancelJob: "Cancel print",
+  qcHeading: "Quality check",
+  qcPass: "QC pass",
+  qcFail: "QC fail — reprint",
+  shipmentHeading: "Shipment",
+  shipmentAwaitingQc: "Record the quality check before shipping.",
+  carrierLabel: "Carrier",
+  trackingLabel: "Tracking number",
+  shipmentSubmit: "Mark shipped",
+  shipmentRecorded: "Shipped with",
 } as const

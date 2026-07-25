@@ -70,6 +70,7 @@ function seed(
     orders?: Record<string, unknown>[]
     quotes?: Record<string, unknown>[]
     dvs?: Record<string, unknown>[]
+    shipments?: Record<string, unknown>[]
   } = {}
 ) {
   return createFakeDb({
@@ -92,7 +93,21 @@ function seed(
       rows: opts.dvs ?? [{ id: "dv_1", project_id: "proj_1", thumbnail_asset_id: "ast_thumb" }],
       unique: ["id"],
     },
+    shipments: { rows: opts.shipments ?? [], unique: ["id"] },
   })
+}
+
+const SHIPPED = {
+  orders: [orderRow({ status: "shipped" })],
+  shipments: [
+    {
+      id: "shp_1",
+      order_id: "ord_1",
+      carrier: "blue_dart",
+      tracking_number: "BD5566",
+      created_at: "2026-01-08",
+    },
+  ],
 }
 
 beforeEach(() => {
@@ -172,5 +187,26 @@ describe("OrderDetailPage", () => {
     db = seed({ orders: [orderRow({ payment_ref: null, status: "pending_payment" })] })
     render(await OrderDetailPage(ctx))
     expect(screen.getByText(/—/)).toBeInTheDocument()
+  })
+
+  it("shows no tracking section before the order ships", async () => {
+    render(await OrderDetailPage(ctx))
+    expect(screen.queryByRole("heading", { name: "Tracking" })).not.toBeInTheDocument()
+  })
+
+  it("shows the carrier and tracking number once the order has shipped", async () => {
+    db = seed(SHIPPED)
+    render(await OrderDetailPage(ctx))
+    expect(screen.getByRole("heading", { name: "Tracking" })).toBeInTheDocument()
+    expect(screen.getByText("Blue Dart")).toBeInTheDocument()
+    expect(screen.getByText("BD5566")).toBeInTheDocument()
+    expect(screen.getByTestId("status")).toHaveAttribute("data-state", "shipped")
+  })
+
+  it("still renders when the shipment query fails", async () => {
+    db = seed(SHIPPED)
+    db.failCall(4, { message: "boom" })
+    render(await OrderDetailPage(ctx))
+    expect(screen.queryByRole("heading", { name: "Tracking" })).not.toBeInTheDocument()
   })
 })

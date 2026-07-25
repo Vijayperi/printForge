@@ -29,6 +29,43 @@ vi.mock("@/src/components/ops/notes-thread", () => ({
   ),
 }))
 
+vi.mock("@/src/components/ops/print-job-panel", () => ({
+  PrintJobPanel: (props: {
+    latest: { id: string; status: string; attempt: number; printerName: string | null } | null
+    printers: { id: string; name: string }[]
+    controls: Record<string, { shown: boolean; disabledReason: string | null }>
+    nextAttempt: number
+  }) => (
+    <div
+      data-testid="print-jobs"
+      data-latest={props.latest?.id ?? ""}
+      data-status={props.latest?.status ?? ""}
+      data-attempt={props.latest?.attempt ?? ""}
+      data-printer={props.latest?.printerName ?? ""}
+      data-printers={props.printers.map((p) => p.name).join(",")}
+      data-next-attempt={props.nextAttempt}
+      data-shown={Object.entries(props.controls)
+        .filter(([, control]) => control.shown)
+        .map(([name]) => name)
+        .join(",")}
+    />
+  ),
+}))
+
+vi.mock("@/src/components/ops/shipment-form", () => ({
+  ShipmentForm: (props: {
+    stage: string
+    shipment: { carrier: string; trackingNumber: string } | null
+  }) => (
+    <div
+      data-testid="shipment"
+      data-stage={props.stage}
+      data-carrier={props.shipment?.carrier ?? ""}
+      data-tracking={props.shipment?.trackingNumber ?? ""}
+    />
+  ),
+}))
+
 import OpsOrderDetailPage from "@/app/(ops)/ops/orders/[id]/page"
 import { ok } from "@/src/lib/result"
 import { createFakeDb } from "@/tests/helpers/fakeDb"
@@ -55,6 +92,9 @@ function seed(
     audits?: Record<string, unknown>[]
     notifications?: Record<string, unknown>[]
     quotes?: Record<string, unknown>[]
+    printJobs?: Record<string, unknown>[]
+    printers?: Record<string, unknown>[]
+    shipments?: Record<string, unknown>[]
   } = {}
 ) {
   return createFakeDb({
@@ -108,7 +148,42 @@ function seed(
     },
     audit_events: { rows: opts.audits ?? [], unique: ["id"] },
     notification_log: { rows: opts.notifications ?? [], unique: ["id"] },
+    print_jobs: { rows: opts.printJobs ?? [], unique: ["id"] },
+    printers: {
+      rows: opts.printers ?? [
+        { id: "prn_1", name: "Forge One", current_state: "idle" },
+        { id: "prn_2", name: "Forge Two", current_state: "idle" },
+      ],
+      unique: ["id"],
+    },
+    shipments: { rows: opts.shipments ?? [], unique: ["id"] },
   })
+}
+
+/** A print_jobs row as `listPrintJobsByOrder` returns it. */
+function jobRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "pj_1",
+    order_id: "ord_1",
+    printer_id: null,
+    status: "pending",
+    attempt: 1,
+    failure_reason: null,
+    created_at: "2026-01-05",
+    ...overrides,
+  }
+}
+
+/** An audit row on a print job, as the quality check writes it. */
+function jobAudit(action: string): Record<string, unknown> {
+  return {
+    id: `evt_${action}`,
+    entity_type: "print_job",
+    entity_id: "pj_1",
+    action,
+    metadata: {},
+    created_at: "2026-01-06",
+  }
 }
 
 beforeEach(() => {
@@ -253,13 +328,120 @@ describe("OpsOrderDetailPage — operator view", () => {
   })
 
   it("still renders when the side queries fail", async () => {
-    db.failCall(2, { message: "boom" })
-    db.failCall(3, { message: "boom" })
-    db.failCall(4, { message: "boom" })
-    db.failCall(5, { message: "boom" })
-    db.failCall(6, { message: "boom" })
+    for (const call of [2, 3, 4, 5, 6, 7, 8, 9]) db.failCall(call, { message: "boom" })
     render(await OpsOrderDetailPage(ctx))
     expect(screen.getByRole("heading", { name: "ord_1" })).toBeInTheDocument()
     expect(screen.getByTestId("notes")).toHaveAttribute("data-count", "0")
+    expect(screen.getByTestId("print-jobs")).toHaveAttribute("data-latest", "")
+    expect(screen.getByTestId("shipment")).toHaveAttribute("data-carrier", "")
+  })
+})
+
+describe("OpsOrderDetailPage — production", () => {
+  it("offers only the create control before any print exists", async () => {
+    db = seed({ order: { status: "production_queued" } })
+    render(await OpsOrderDetailPage(ctx))
+    const panel = screen.getByTestId("print-jobs")
+    expect(panel).toHaveAttribute("data-latest", "")
+    expect(panel).toHaveAttribute("data-shown", "create")
+    expect(panel).toHaveAttribute("data-next-attempt", "1")
+  })
+
+  it("passes the fleet to the panel for the printer picker", async () => {
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("print-jobs")).toHaveAttribute(
+      "data-printers",
+      "Forge One,Forge Two"
+    )
+  })
+
+  it("resolves the assigned printer to its name", async () => {
+    db = seed({
+      order: { status: "production_queued" },
+      printJobs: [jobRow({ printer_id: "prn_2" })],
+    })
+    render(await OpsOrderDetailPage(ctx))
+    const panel = screen.getByTestId("print-jobs")
+    expect(panel).toHaveAttribute("data-latest", "pj_1")
+    expect(panel).toHaveAttribute("data-printer", "Forge Two")
+    expect(panel).toHaveAttribute("data-next-attempt", "2")
+  })
+
+  it("leaves the printer blank while the job is unassigned", async () => {
+    db = seed({ order: { status: "production_queued" }, printJobs: [jobRow()] })
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("print-jobs")).toHaveAttribute("data-printer", "")
+  })
+
+  it("hands the panel the newest job when the order has been reprinted", async () => {
+    db = seed({
+      order: { status: "production_queued" },
+      printJobs: [
+        jobRow({ id: "pj_2", status: "pending", attempt: 2, created_at: "2026-01-07" }),
+        jobRow({ id: "pj_1", status: "failed", attempt: 1, created_at: "2026-01-05" }),
+      ],
+    })
+    render(await OpsOrderDetailPage(ctx))
+    const panel = screen.getByTestId("print-jobs")
+    expect(panel).toHaveAttribute("data-latest", "pj_2")
+    expect(panel).toHaveAttribute("data-attempt", "2")
+  })
+})
+
+describe("OpsOrderDetailPage — shipment", () => {
+  const printed = {
+    order: { status: "quality_check" },
+    printJobs: [jobRow({ status: "completed", printer_id: "prn_1" })],
+  }
+
+  it("hides the shipment form while the order is still in production", async () => {
+    db = seed({ order: { status: "production_queued" }, printJobs: [jobRow()] })
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("shipment")).toHaveAttribute("data-stage", "hidden")
+  })
+
+  it("waits for the quality check before offering the form", async () => {
+    db = seed(printed)
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("shipment")).toHaveAttribute("data-stage", "awaiting_qc")
+  })
+
+  it("does not count a failed quality check as a pass", async () => {
+    db = seed({ ...printed, audits: [jobAudit("print_job.qc.fail")] })
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("shipment")).toHaveAttribute("data-stage", "awaiting_qc")
+  })
+
+  it("offers the form once a passing quality check is on the record", async () => {
+    db = seed({ ...printed, audits: [jobAudit("print_job.qc.pass")] })
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("shipment")).toHaveAttribute("data-stage", "ready")
+  })
+
+  it("shows the recorded carrier and tracking number once shipped", async () => {
+    db = seed({
+      order: { status: "shipped" },
+      printJobs: [jobRow({ status: "completed" })],
+      shipments: [
+        {
+          id: "shp_1",
+          order_id: "ord_1",
+          carrier: "blue_dart",
+          tracking_number: "BD5566",
+          created_at: "2026-01-08",
+        },
+      ],
+    })
+    render(await OpsOrderDetailPage(ctx))
+    const shipment = screen.getByTestId("shipment")
+    expect(shipment).toHaveAttribute("data-carrier", "blue_dart")
+    expect(shipment).toHaveAttribute("data-tracking", "BD5566")
+  })
+
+  it("survives a failing audit lookup on the print job", async () => {
+    db = seed(printed)
+    db.failCall(10, { message: "boom" })
+    render(await OpsOrderDetailPage(ctx))
+    expect(screen.getByTestId("shipment")).toHaveAttribute("data-stage", "awaiting_qc")
   })
 })

@@ -4,10 +4,12 @@ import { getAuthGateway } from "@/src/adapters/auth/factory"
 import { OrderSummary } from "@/src/components/checkout/order-summary"
 import { PageHeader } from "@/src/components/layout/primitives"
 import { OrderStatus } from "@/src/components/orders/order-status"
+import { ShipmentTracking } from "@/src/components/orders/shipment-tracking"
 import { ordersContent } from "@/src/config/content"
 import { getDesignVersion } from "@/src/data/designVersions"
 import { getOrderOwned } from "@/src/data/orders"
 import { getQuote } from "@/src/data/quotes"
+import { listShipmentsByOrder } from "@/src/data/shipments"
 import { getRequestDb } from "@/src/data/supabaseClients"
 import { readFrozenConfig } from "@/src/domain/checkout/frozenConfig"
 import { readStoredAddress, readStoredContact } from "@/src/domain/checkout/schema"
@@ -35,6 +37,8 @@ export default async function OrderDetailPage({
 
   const quote = await getQuote(db, order.value.quote_id)
   const dv = await getDesignVersion(db, order.value.frozen_dv_id)
+  const shipments = await listShipmentsByOrder(db, orderId)
+  const shipment = shipments.ok ? (shipments.value[0] ?? null) : null
 
   const config = readFrozenConfig(order.value.frozen_config_json)
   const address = readStoredAddress(order.value.shipping_address_json)
@@ -61,6 +65,14 @@ export default async function OrderDetailPage({
           <OrderStatus
             state={order.value.status as OrderState}
             heldFrom={order.value.held_from_status as OrderState | null}
+          />
+
+          <ShipmentTracking
+            shipment={
+              shipment === null
+                ? null
+                : { carrier: shipment.carrier, trackingNumber: shipment.tracking_number }
+            }
           />
 
           <section aria-labelledby="order-shipping-heading" className="space-y-1 text-sm">

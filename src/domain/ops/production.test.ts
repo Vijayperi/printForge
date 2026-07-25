@@ -6,14 +6,18 @@ import {
   assertCanCreatePrintJob,
   assignPrinterSchema,
   createPrintJobSchema,
+  hasQcPass,
   MAX_PRINT_ATTEMPTS,
   nextAttemptNumber,
   printJobActionSchema,
+  printJobControls,
+  qcAuditAction,
   qcPrintJob,
   qcRequestSchema,
   RELEASE_DISABLED_REASON,
   retryPrintJob,
   shipmentRequestSchema,
+  shipmentStage,
 } from "@/src/domain/ops/production"
 import type { PrintJobRow } from "@/src/domain/types"
 
@@ -253,5 +257,108 @@ describe("request schemas", () => {
 describe("RELEASE_DISABLED_REASON", () => {
   it("explains that release is not built yet rather than blaming a precondition", () => {
     expect(RELEASE_DISABLED_REASON).toMatch(/printer gateway/i)
+  })
+})
+
+describe("printJobControls", () => {
+  const queued = { status: "production_queued", payment_status: "paid" }
+
+  it("offers only an enabled create control before any job exists", () => {
+    const controls = printJobControls(queued, [])
+    expect(controls.create).toEqual({ shown: true, disabledReason: null })
+    for (const key of ["assign", "release", "retry", "cancel", "qc"] as const) {
+      expect(controls[key]).toEqual({ shown: false, disabledReason: null })
+    }
+  })
+
+  it("explains a disabled create control on an unpaid order", () => {
+    const controls = printJobControls({ ...queued, payment_status: "unpaid" }, [])
+    expect(controls.create).toEqual({
+      shown: true,
+      disabledReason: "this order has not been paid",
+    })
+  })
+
+  it("offers assign, release and cancel on a pending job", () => {
+    const controls = printJobControls(queued, [job({ status: "pending" })])
+    expect(controls.assign).toEqual({ shown: true, disabledReason: null })
+    expect(controls.release).toEqual({ shown: true, disabledReason: RELEASE_DISABLED_REASON })
+    expect(controls.cancel.shown).toBe(true)
+    expect(controls.create.disabledReason).toContain("still active")
+    expect(controls.retry.shown).toBe(false)
+    expect(controls.qc.shown).toBe(false)
+  })
+
+  it("hides assign and release once the job is printing, but still allows cancel", () => {
+    const controls = printJobControls(queued, [job({ status: "printing" })])
+    expect(controls.assign.shown).toBe(false)
+    expect(controls.assign.disabledReason).toContain("cannot be moved")
+    expect(controls.release.shown).toBe(false)
+    expect(controls.cancel.shown).toBe(true)
+  })
+
+  it("offers retry on a failed job under the cap", () => {
+    const controls = printJobControls(queued, [job({ status: "failed", attempt: 2 })])
+    expect(controls.retry).toEqual({ shown: true, disabledReason: null })
+  })
+
+  it("shows retry disabled with the cap message on the last attempt", () => {
+    const controls = printJobControls(queued, [
+      job({ status: "failed", attempt: MAX_PRINT_ATTEMPTS }),
+    ])
+    expect(controls.retry.shown).toBe(true)
+    expect(controls.retry.disabledReason).toContain(`cap ${MAX_PRINT_ATTEMPTS}`)
+  })
+
+  it("offers the quality check on a completed job once the order is awaiting one", () => {
+    const controls = printJobControls(
+      { status: "quality_check", payment_status: "paid" },
+      [job({ status: "completed" })]
+    )
+    expect(controls.qc).toEqual({ shown: true, disabledReason: null })
+    expect(controls.cancel.shown).toBe(false)
+  })
+
+  it("shows the quality check disabled when the order is not in quality_check", () => {
+    const controls = printJobControls(queued, [job({ status: "completed" })])
+    expect(controls.qc.shown).toBe(true)
+    expect(controls.qc.disabledReason).toContain("not awaiting a quality check")
+  })
+})
+
+describe("qcAuditAction", () => {
+  it.each([
+    ["pass", "print_job.qc.pass"],
+    ["fail", "print_job.qc.fail"],
+  ] as const)("names the %s action", (outcome, action) => {
+    expect(qcAuditAction(outcome)).toBe(action)
+  })
+})
+
+describe("hasQcPass", () => {
+  it("is false for an empty trail", () => {
+    expect(hasQcPass([])).toBe(false)
+  })
+
+  it("is false when only a failed check was recorded", () => {
+    expect(hasQcPass([{ action: qcAuditAction("fail") }])).toBe(false)
+  })
+
+  it("finds a pass among unrelated events", () => {
+    expect(
+      hasQcPass([{ action: "print_job.assigned" }, { action: qcAuditAction("pass") }])
+    ).toBe(true)
+  })
+})
+
+describe("shipmentStage", () => {
+  it.each([
+    ["production_queued", true, "hidden"],
+    ["printing", false, "hidden"],
+    ["shipped", true, "hidden"],
+    ["quality_check", false, "awaiting_qc"],
+    ["quality_check", true, "ready"],
+  ] as const)("%s with qcPassed=%s is %s", (status, qcPassed, stage) => {
+    expect(shipmentStage(status, qcPassed)).toBe(stage)
   })
 })

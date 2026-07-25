@@ -2,7 +2,7 @@ import { insertAuditEvent } from "@/src/data/auditEvents"
 import { applyPaymentOutcome, getOrder } from "@/src/data/orders"
 import { getPrintJob } from "@/src/data/printJobs"
 import { getServiceDb } from "@/src/data/supabaseClients"
-import { qcPrintJob, qcRequestSchema } from "@/src/domain/ops/production"
+import { qcAuditAction, qcPrintJob, qcRequestSchema } from "@/src/domain/ops/production"
 import { appError } from "@/src/lib/errors"
 import { requireOperator } from "@/src/lib/opsAuth"
 import { jsonError, parseJsonBody } from "@/src/lib/opsRoute"
@@ -51,7 +51,7 @@ export async function POST(
     actorKind: "user",
     entityType: "print_job",
     entityId: id,
-    action: `print_job.qc.${body.value.outcome}`,
+    action: qcAuditAction(body.value.outcome),
     metadata: {
       reason: body.value.reason,
       orderId: order.value.id,

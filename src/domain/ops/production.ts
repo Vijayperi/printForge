@@ -187,3 +187,98 @@ export function qcPrintJob(
     awaitingShipment: false,
   })
 }
+
+/** One control on the ops production panel: whether to draw it, and if so, why it is inert. */
+export interface Control {
+  shown: boolean
+  disabledReason: string | null
+}
+
+export interface PrintJobControls {
+  create: Control
+  assign: Control
+  release: Control
+  retry: Control
+  cancel: Control
+  qc: Control
+}
+
+const HIDDEN: Control = { shown: false, disabledReason: null }
+
+function control(shown: boolean, guard: Result<unknown>): Control {
+  return { shown, disabledReason: guard.ok ? null : guard.error.message }
+}
+
+/**
+ * Which production controls an operator sees on an order, and why each inert one
+ * is inert (plan §6-S14 step 4). Every rule lives here rather than in the panel:
+ * the server decides what is legal, the client only draws it — and the same
+ * guards run again inside the routes, so a stale page cannot do damage.
+ *
+ * The controls hang off the *latest* job, not the active one: a `completed` job
+ * is no longer active but is exactly the one awaiting a quality check.
+ */
+export function printJobControls(
+  order: { status: string; payment_status: string },
+  jobs: readonly PrintJobRow[]
+): PrintJobControls {
+  const latest = jobs[0] ?? null
+  if (latest === null) {
+    return {
+      ...{ assign: HIDDEN, release: HIDDEN, retry: HIDDEN, cancel: HIDDEN, qc: HIDDEN },
+      create: control(true, assertCanCreatePrintJob(order, jobs)),
+    }
+  }
+  return {
+    create: control(true, assertCanCreatePrintJob(order, jobs)),
+    assign: control(latest.status === "pending", assertCanAssignPrinter(latest)),
+    // Release is drawn but never live in S14 — the printer gateway is S15.
+    release: { shown: latest.status === "pending", disabledReason: RELEASE_DISABLED_REASON },
+    retry: control(latest.status === "failed", retryPrintJob(latest)),
+    cancel: { shown: printJobMachine.can(latest.status as PrintJobState, "CANCEL"), disabledReason: null },
+    qc: control(
+      latest.status === "completed",
+      order.status === "quality_check"
+        ? ok(undefined)
+        : err(
+            appError(
+              "precondition_failed",
+              `an order in ${order.status} is not awaiting a quality check`
+            )
+          )
+    ),
+  }
+}
+
+/** The audit action a recorded quality check is written under. */
+export function qcAuditAction(outcome: QcOutcome): string {
+  return `print_job.qc.${outcome}`
+}
+
+/**
+ * Whether a passing quality check has been recorded on this print job.
+ *
+ * A pass changes no row — it only writes an audit event (see `qcPrintJob`) —
+ * so the trail is the single source of truth, and reader and writer share
+ * `qcAuditAction` so the string cannot drift between them.
+ */
+export function hasQcPass(events: readonly { action: string }[]): boolean {
+  return events.some((event) => event.action === qcAuditAction("pass"))
+}
+
+/**
+ * `hidden` — nothing to ship yet; `awaiting_qc` — printed, but no operator has
+ * signed off; `ready` — show the shipment form.
+ */
+export type ShipmentStage = "hidden" | "awaiting_qc" | "ready"
+
+/**
+ * Whether an operator may record a shipment (plan §6-S14 step 4: "pass →
+ * prompts shipment"). Only `quality_check` qualifies: a QC fail sends the order
+ * back to `production_queued`, and a shipped order already has its tracking
+ * number.
+ */
+export function shipmentStage(orderStatus: string, qcPassed: boolean): ShipmentStage {
+  if (orderStatus !== "quality_check") return "hidden"
+  return qcPassed ? "ready" : "awaiting_qc"
+}
