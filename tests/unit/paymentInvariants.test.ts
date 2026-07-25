@@ -15,12 +15,18 @@ const SKIPPED_DIRS = new Set(["node_modules", ".next"])
 
 const DODO_SECRET_ENV_VARS = ["DODO_API_KEY", "DODO_WEBHOOK_SECRET", "DODO_PRODUCT_ID"]
 
-/** Files allowed to name a Dodo credential. */
+/**
+ * Files allowed to name a Dodo credential. `bundleSecrets` is here because
+ * naming them is its entire job: it is the check that hunts for these very
+ * strings in the built client bundles (plan §6-S15 step 5).
+ */
 const CREDENTIAL_ALLOWLIST = new Set([
   "src/config/env.ts",
   "src/config/env.test.ts",
   "src/adapters/payments/factory.ts",
   "src/adapters/payments/factory.test.ts",
+  "src/lib/bundleSecrets.ts",
+  "src/lib/bundleSecrets.test.ts",
 ])
 
 async function sourceFiles(): Promise<string[]> {

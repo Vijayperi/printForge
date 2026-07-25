@@ -634,3 +634,71 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   `supabase_*_vijayperi`), and it steals ports 54321/54322 from the real `printforge` stack —
   every integration test then fails against an empty database. Fix: `npx supabase stop
   --project-id <stray> --no-backup`, then start again with `--workdir` pointing at `printforge/`.
+
+## S15 Phase A — printer gateway adapter, dispatch guard, isolation gates
+
+**Date:** 2026-07-26. **Session split:** S15 is a five-step session (330 planned minutes), so it
+follows the S13/S14 precedent and ships as two half-sessions. Phase A is everything that can be
+built and proven without touching the UI: the gateway adapter (step 1), the dispatch preconditions
+guard (step 3) and the two isolation assertions (step 5), plus the DB half of step 2. Phase B is
+the `print.dispatch` handler, the status poller, the live release/cancel controls and `/ops/printers`
+(steps 2 and 4), with its own integration and e2e coverage.
+
+- **OctoPrint docs re-verified 2026-07-26** (plan §0.4) against `docs.octoprint.org/en/main/api/`:
+  upload is `POST /api/files/local` (multipart `file` + `select`, `X-Api-Key`, **201**), the print
+  is started separately with `POST /api/files/local/{path}` `{command:"select",print:true}` (**204**),
+  state comes from `GET /api/printer` and progress from `GET /api/job`, and cancel is
+  `POST /api/job` `{command:"cancel"}`. Two facts drove the implementation: `GET /api/printer`
+  answers **409 when the printer is not operational** (so 409 is mapped to `offline`, not to an
+  error), and `progress.completion` is a **percentage, not a fraction**.
+- **`gatewayJobRef` is a synthesized `octoprint:<printerId>:<fileName>` handle.** OctoPrint has no
+  job identifiers — a print is only "the file that is currently loaded" — but the §4.4 interface
+  hands `cancel` a bare ref, so the ref has to carry the two things needed to find the print again.
+  The file is named after the `idempotencyKey`, which is what makes a replayed dispatch land on the
+  same file rather than uploading a second copy.
+- **Idempotency is enforced by observation, not by a store.** `release` first asks the machine what
+  is on its bed; if that is already our file it returns the same ref without re-uploading. This
+  makes "duplicate release never double-prints" true even across a worker restart, where an
+  in-memory idempotency map would have been lost. The mock keeps a key→ref map for the same reason
+  and the shared contract asserts the invariant against both.
+- **The multipart body is assembled by hand** (`multipartGcodeBody`) instead of with `FormData` +
+  `Blob`. Those are environment-provided classes, and under jsdom they are not the ones Node's
+  multipart parser accepts — undici brand-checks the `File` it builds and throws on *any* multipart
+  body. Building the bytes ourselves keeps the wire format identical under test and in production.
+  (The test's fake OctoPrint parses the raw parts for the same reason.)
+- **`MockGateway` timelines advance per poll, not per tick of a clock.** A scripted machine reports
+  one `MockTick` per `printerStatus` call after a release, and a non-`busy` tick ends the print and
+  becomes the machine's new resting state — so `idle` frees the bay and `error` leaves it needing an
+  operator. That gives the plan's three scripted timelines (idle→busy→idle, offline, mid-print
+  failure at N%) with no timers and no clock injection, so the poller can be walked deterministically
+  in Phase B.
+- **The gateway never stops a print it did not start.** `cancel` verifies the loaded file is ours
+  and answers `conflict` otherwise; if nothing of ours is loaded it succeeds (already finished or
+  already cancelled), matching the mock's idempotent double-cancel.
+- **`dispatchGuard` is its own module with a generated truth table.** All 64 combinations of the six
+  preconditions are enumerated from `DISPATCH_FACT_ORDER`, and the expected reason for each row is
+  *derived* (first unmet fact in check order) rather than written out, so the table cannot drift
+  from the guard. Only the all-true row releases. `dispatchFacts` reads the six facts off the rows
+  and is tested separately, so the table never has to invent database rows.
+- **The interlock index already existed.** Step 2's "DB partial unique index on
+  `print_jobs(printer_id)` where status in ('released','printing')" was created in S4 as
+  `print_jobs_active_printer_idx` with exactly that definition, so no migration was added. Phase B
+  asserts it bites from an integration test.
+- **The ESLint boundary is expressed as three overrides, not one rule plus `ignores`.** Flat config
+  *replaces* a rule rather than merging it, so each override restates every ban still in force for
+  the files it matches — otherwise adding the printer-gateway ban would have silently dropped the
+  Supabase ban. Verified by probe: the import is rejected in a component, rejected even for a
+  sibling file inside the release route's own directory, and allowed only in `src/jobs/**`, the
+  adapter itself, and `app/api/ops/print-jobs/*/release/route.ts`.
+- **The bundle-secret grep runs in `npm run verify`, not only in CI.** It is a new step after
+  `next build` (`npm run check:bundle`), so a leak fails locally at the same moment it would fail
+  in CI. Detection logic lives in `src/lib/bundleSecrets.ts` (fully covered); the script is just
+  the filesystem walk, like `scripts/worker.ts`. It searches for both the *names* of the four
+  forbidden env vars (which appear when client code reads `process.env.X`) and their *values* when
+  set and long enough to be meaningful, and it reports which key leaked without printing the secret.
+  Verified by planting both kinds of hit in `.next/static` — exit 1 — and removing them — exit 0.
+- **`tests/unit/paymentInvariants.test.ts` gained two allowlist entries.** `bundleSecrets.ts` and
+  its test are allowed to name Dodo credentials because naming them is the entire point of the
+  check; the S13 invariant otherwise flags the file that exists to catch leaks.
+- **Verified:** 2494 unit tests @ 100/100/100/100, `npm run verify` green (exit 0, including the
+  new bundle gate). No UI, API or integration surface changed in this phase.
