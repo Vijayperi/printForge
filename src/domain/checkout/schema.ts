@@ -55,3 +55,36 @@ export const checkoutRequestSchema = z.strictObject({
 export type Contact = z.infer<typeof contactSchema>
 export type ShippingAddress = z.infer<typeof shippingAddressSchema>
 export type CheckoutRequest = z.infer<typeof checkoutRequestSchema>
+
+/**
+ * Readers for the contact + address snapshots stored on an order. Unlike the
+ * request schemas these never reject: an order page must render whatever jsonb
+ * we already wrote, so every field falls back to an empty string.
+ */
+const storedString = z.string().catch("")
+
+const storedContactSchema = z.object({
+  name: storedString,
+  email: storedString,
+  phone: storedString,
+})
+
+const storedAddressSchema = z.object({
+  line1: storedString,
+  line2: storedString,
+  city: storedString,
+  state: storedString,
+  pincode: storedString,
+  country: z.string().catch(SHIPPING_COUNTRY),
+})
+
+export type StoredContact = z.infer<typeof storedContactSchema>
+export type StoredAddress = z.infer<typeof storedAddressSchema>
+
+export function readStoredContact(json: Record<string, unknown>): StoredContact {
+  return storedContactSchema.parse(json)
+}
+
+export function readStoredAddress(json: Record<string, unknown>): StoredAddress {
+  return storedAddressSchema.parse(json)
+}

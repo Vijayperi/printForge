@@ -13,6 +13,7 @@ import { getConfigurationById } from "@/src/data/printConfigurations"
 import { getQuote, updateQuoteStatus } from "@/src/data/quotes"
 import { getRequestDb, getServiceDb } from "@/src/data/supabaseClients"
 import { getLatestValidationReport } from "@/src/data/validationReports"
+import { freezeConfiguration } from "@/src/domain/checkout/frozenConfig"
 import { checkoutRequestSchema, type CheckoutRequest } from "@/src/domain/checkout/schema"
 import { isExpired } from "@/src/domain/quoting/quote"
 import { transitionOrThrow } from "@/src/domain/stateMachines/machine"
@@ -29,25 +30,6 @@ const PAYABLE_VERDICTS = new Set(["pass", "warning"])
 function jsonError(error: AppError): Response {
   const { status, body } = toHttpError(error)
   return Response.json(body, { status })
-}
-
-/**
- * The configuration snapshot frozen onto the order (FR-2). The live
- * `print_configurations` row keeps mutating as the customer tinkers; what was
- * bought must not.
- */
-function freezeConfiguration(config: PrintConfigurationRow): Record<string, unknown> {
-  return {
-    configurationId: config.id,
-    materialId: config.material_id,
-    colorId: config.color_id,
-    dimensionsMm: config.dimensions_mm,
-    scaleFactor: config.scale_factor,
-    qualityId: config.quality_id,
-    strengthId: config.strength_id,
-    shippingSpeed: config.shipping_speed,
-    specialInstructions: config.special_instructions,
-  }
 }
 
 interface PayableQuote {
@@ -145,7 +127,7 @@ export async function POST(request: Request): Promise<Response> {
     contactJson: { ...body.contact },
     shippingAddressJson: { ...body.shippingAddress },
     frozenDvId: designVersionId,
-    frozenConfigJson: freezeConfiguration(config),
+    frozenConfigJson: { ...freezeConfiguration(config) },
   })
   if (!order.ok) return jsonError(order.error)
   const orderId = order.value.id

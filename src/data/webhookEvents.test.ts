@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { getWebhookEvent, recordWebhookEvent } from "@/src/data/webhookEvents"
+import {
+  getWebhookEvent,
+  recordWebhookEvent,
+  updateWebhookProcessingResult,
+} from "@/src/data/webhookEvents"
 import { isId } from "@/src/lib/ids"
 import { createFakeDb } from "@/tests/helpers/fakeDb"
 
@@ -45,5 +49,28 @@ describe("getWebhookEvent", () => {
   it("returns null when absent", async () => {
     const result = await getWebhookEvent(db(), "dodo", "nope")
     expect(result.ok && result.value).toBeNull()
+  })
+})
+
+describe("updateWebhookProcessingResult", () => {
+  it("stamps how the event was handled", async () => {
+    const fake = db([
+      {
+        id: "wh_1",
+        provider: "dodo",
+        event_id: "evt_a",
+        payload: {},
+        processing_result: null,
+        received_at: "1",
+        created_at: "1",
+      },
+    ])
+    const result = await updateWebhookProcessingResult(fake, "wh_1", "processed")
+    expect(result.ok && result.value.processing_result).toBe("processed")
+  })
+
+  it("fails when the event row is absent", async () => {
+    const result = await updateWebhookProcessingResult(db(), "wh_missing", "processed")
+    expect(!result.ok && result.error.code).toBe("not_found")
   })
 })

@@ -34,7 +34,8 @@ test.describe("projects CRUD (Supabase)", () => {
     const renameDialog = page.getByRole("dialog")
     await renameDialog.getByLabel("Project name").fill("Renamed print")
     await renameDialog.getByRole("button", { name: "Save" }).click()
-    await expect(page.getByText("Renamed print")).toBeVisible()
+    // Scope to the card: the (closing) dialog's description quotes the new name too.
+    await expect(page.getByTestId("project-card").getByText("Renamed print")).toBeVisible()
 
     // Archive (confirm in the alert dialog).
     await page.getByRole("button", { name: "Archive" }).click()

@@ -40,6 +40,7 @@ describe("StudioLayout", () => {
     render(await StudioLayout({ children: <p>the child content</p> }))
     expect(screen.getByRole("link", { name: "me@example.com" })).toHaveAttribute("href", "/profile")
     expect(screen.getByRole("link", { name: "My projects" })).toHaveAttribute("href", "/projects")
+    expect(screen.getByRole("link", { name: "My orders" })).toHaveAttribute("href", "/orders")
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument()
     expect(screen.getByText("the child content")).toBeInTheDocument()
   })

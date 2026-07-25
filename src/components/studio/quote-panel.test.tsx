@@ -62,7 +62,10 @@ describe("QuotePanel", () => {
     expect(screen.getAllByText("₹60.00")).toHaveLength(2) // material + shipping lines
     expect(screen.getByText("1h 30m")).toBeInTheDocument() // duration
     expect(screen.getAllByText(/business days/)).toHaveLength(2) // production + delivery
-    expect(screen.getByRole("button", { name: "Proceed to checkout" })).toBeDisabled()
+    expect(screen.getByRole("link", { name: "Proceed to checkout" })).toHaveAttribute(
+      "href",
+      "/checkout?quoteId=qt_1"
+    )
     expect(screen.getByRole("button", { name: "Refresh quote" })).toBeInTheDocument()
   })
 

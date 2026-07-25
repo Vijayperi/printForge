@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useEffect, useState } from "react"
 
 import { Button } from "@/src/components/ui/button"
@@ -170,8 +171,10 @@ function Ready({ quote }: { quote: QuoteDto }) {
 
       <p className="text-xs text-muted-foreground">{quoteContent.disclaimer}</p>
 
-      <Button type="button" disabled className="w-full">
-        {quoteContent.proceed}
+      <Button asChild className="w-full">
+        <Link href={`/checkout?quoteId=${encodeURIComponent(quote.id)}`}>
+          {quoteContent.proceed}
+        </Link>
       </Button>
     </div>
   )

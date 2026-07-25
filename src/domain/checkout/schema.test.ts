@@ -6,6 +6,8 @@ import {
   contactSchema,
   phoneSchema,
   pincodeSchema,
+  readStoredAddress,
+  readStoredContact,
   shippingAddressSchema,
 } from "@/src/domain/checkout/schema"
 
@@ -135,5 +137,42 @@ describe("checkoutRequestSchema", () => {
     ["missing address", { quoteId: "qt_1", contact: CONTACT }],
   ])("rejects %s", (_label, input) => {
     expect(checkoutRequestSchema.safeParse(input).success).toBe(false)
+  })
+})
+
+describe("readStoredContact / readStoredAddress", () => {
+  it("reads back a snapshot we wrote ourselves", () => {
+    const parsed = shippingAddressSchema.parse(ADDRESS)
+    expect(readStoredAddress({ ...parsed })).toEqual({
+      line1: parsed.line1,
+      line2: "",
+      city: parsed.city,
+      state: parsed.state,
+      pincode: parsed.pincode,
+      country: "IN",
+    })
+  })
+
+  it("keeps an optional second address line when one was stored", () => {
+    expect(readStoredAddress({ ...ADDRESS, line2: "Flat 3B" }).line2).toBe("Flat 3B")
+  })
+
+  it("never throws on an empty or wrongly-typed snapshot", () => {
+    expect(readStoredContact({})).toEqual({ name: "", email: "", phone: "" })
+    expect(readStoredContact({ name: 7, email: null, phone: [] })).toEqual({
+      name: "",
+      email: "",
+      phone: "",
+    })
+    expect(readStoredAddress({}).country).toBe("IN")
+    expect(readStoredAddress({ country: 42 }).country).toBe("IN")
+  })
+
+  it("reads a contact snapshot back verbatim", () => {
+    expect(readStoredContact({ ...CONTACT, phone: "+919876543210" })).toEqual({
+      name: CONTACT.name,
+      email: CONTACT.email,
+      phone: "+919876543210",
+    })
   })
 })

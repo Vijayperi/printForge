@@ -258,3 +258,48 @@ export const quoteContent = {
   disclaimer:
     "Prices are estimates from an automated slice and may be re-quoted if the model or options change. Orders can be refunded per our returns policy before production begins.",
 } as const
+
+/**
+ * Checkout copy (plan §6-S13 step 4). OWNER DECISION REQUIRED: the payment and
+ * cancellation wording below is a placeholder pending legal review.
+ */
+export const checkoutContent = {
+  title: "Checkout",
+  intro: "Confirm where this print should go, then pay to start production.",
+  reviewHeading: "Your order",
+  contactHeading: "Contact",
+  addressHeading: "Shipping address",
+  nameLabel: "Full name",
+  emailLabel: "Email",
+  phoneLabel: "Mobile number",
+  line1Label: "Address line 1",
+  line2Label: "Address line 2 (optional)",
+  cityLabel: "City",
+  stateLabel: "State",
+  pincodeLabel: "PIN code",
+  countryNote: "We currently ship within India only.",
+  submit: "Pay with Dodo",
+  submitting: "Opening secure checkout…",
+  totalLabel: "Total payable",
+  unavailable: "This quote can no longer be paid. Request a fresh quote from your project.",
+  genericError: "We couldn’t open checkout. Please try again.",
+  securityNote:
+    "Payment is handled by Dodo Payments, our merchant of record. PrintForge never sees your card details.",
+} as const
+
+/** Orders copy (plan §6-S13 step 4). */
+export const ordersContent = {
+  listTitle: "My orders",
+  listIntro: "Every print you’ve ordered, newest first.",
+  empty: "No orders yet — configure a model and request a quote to get started.",
+  detailTitle: "Order",
+  statusHeading: "Status",
+  pendingNote: "Confirming your payment with the provider — this page updates itself.",
+  configHeading: "What we’re printing",
+  shippingHeading: "Shipping to",
+  paymentHeading: "Payment",
+  receiptPlaceholder: "A receipt will be emailed to you.",
+  placedLabel: "Placed",
+  totalLabel: "Total",
+  viewOrder: "View order",
+} as const

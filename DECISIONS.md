@@ -447,3 +447,54 @@ switch and a role=group (not <dl>) for dimensions to satisfy axe.
   `frozen_config_json`); only a `provider_session_id` writer was added to `src/data/orders.ts`.
 - **Verified:** 1702 unit tests @ 100/100/100/100, `npm run verify` green. Phase A ships no
   UI, no webhook route and no e2e — those are Phase B.
+
+## 2026-07-25 — S13 Phase B: webhook route, checkout & orders UI, e2e
+
+- **A webhook whose processing never completed can be re-processed.** The route inserts into
+  `webhook_events` first and stamps `processing_result` only on success. A replay of an event
+  id whose row still has `processing_result IS NULL` (we crashed, or answered 500) is handed
+  back for another attempt; a replay of a *stamped* row answers 200 `duplicate`. Without this,
+  a 500 would poison the event id forever — the row would exist, so every Dodo retry would be
+  treated as a duplicate and the event would never be applied.
+- **"One transaction" is approximated by one row update.** §6-S13 step 3 asks for transactional
+  processing, but the PostgREST data layer has no multi-statement transaction. Instead
+  `applyPaymentOutcome` writes status + payment axis + payment ref + `held_from_status` in a
+  SINGLE atomic `UPDATE`, and everything after it (audit row, queued notification) is
+  idempotent-by-key, so a retry converges.
+- **Verification failures answer 401 or 400, never 502.** A bad signature is 401; a malformed
+  payload of a type we act on is a permanent 400 (`toHttpError` would map its `provider_error`
+  to 502, which Dodo retries — pointless, since a malformed body never becomes valid).
+- **Refunds and disputes are matched by `payment_ref`, not metadata.** A refund arriving before
+  the `payment.succeeded` that would have recorded the reference finds no order and is logged
+  `out_of_order` + escalated to ops — never guessed at.
+- **Processing-result vocabulary** (stored on `webhook_events.processing_result`, echoed in the
+  ACK body): `processed`, `ignored`, `unknown_order`, `out_of_order`, `already_paid`,
+  `not_pending`, `late_payment_on_cancelled_order`, `not_holdable`, `illegal_refund`.
+- **Late money on a cancelled order is recorded, not transitioned.** `cancelled` is terminal,
+  so the payment axis and `payment_ref` are written (the money really did arrive) while the
+  fulfillment status stays `cancelled`; ops gets an audit row + an `ops_late_payment`
+  notification to refund it. Same principle for an unmatched payment (`ops_payment_unmatched`),
+  an unmatched refund (`ops_refund_unmatched`) and every dispute (`ops_dispute_opened`).
+- **Ops alerts are queued as `notification.send` jobs.** That handler ships in S16; until then
+  the rows sit `pending` (the worker's `HANDLED_TYPES` does not claim them), which is the same
+  pattern S10 used for `ops_manual_review`.
+- **`freezeConfiguration` moved into `src/domain/checkout/frozenConfig.ts`** and gained a
+  `readFrozenConfig` partner so the freeze and the thaw live together. The reader uses
+  `z…​.catch(...)` on every field: an order page must render whatever jsonb we already stored,
+  even a differently-shaped older row. `readStoredContact`/`readStoredAddress` in `schema.ts`
+  follow the same rule.
+- **`ORDER_TIMELINE` excludes `on_hold` and `cancelled`.** They are conditions shown *beside*
+  the customer track, not stops on it: an on-hold order renders frozen at its
+  `held_from_status`, a cancelled one has no position at all.
+- **The return page polls itself while `pending_payment`.** Coming back from the payment page
+  proves nothing — the webhook settles the order — so `OrderStatus` calls `router.refresh()`
+  every 2s until the status moves off `pending_payment`.
+- **`/mock-checkout/{sessionId}` signs both outcomes server-side** and the client POSTs the raw
+  body byte-for-byte. It 404s unless `NODE_ENV !== production` AND `PAYMENT_PROVIDER === mock`.
+- **Fixed a pre-existing S4 e2e bug:** `projects.spec.ts` asserted `getByText("Renamed print")`,
+  which matches both the project card and the closing rename dialog's description (strict-mode
+  violation). Scoped to the card. This was the last blocker to a fully green e2e suite.
+- **Verified:** 1857 unit tests @ 100/100/100/100, `npm run verify` green; 8 new live
+  integration cases for the webhook route (34 integration total, 1 pre-existing cross-file
+  flake in `generationFlow` — a stale `validation.run` job from another file gets claimed;
+  passes alone); **all 17 Playwright specs green serially** with Supabase + worker.

@@ -65,6 +65,14 @@ export function getOrderByQuoteId(db: Db, quoteId: string): Promise<Result<Order
   return maybeOneWhere<OrderRow>(db, TABLE, [["quote_id", quoteId]])
 }
 
+/** The order a provider payment reference belongs to — how refunds and disputes find their order. */
+export function getOrderByPaymentRef(
+  db: Db,
+  paymentRef: string
+): Promise<Result<OrderRow | null>> {
+  return maybeOneWhere<OrderRow>(db, TABLE, [["payment_ref", paymentRef]])
+}
+
 export function updateOrderStatus(db: Db, id: string, status: string): Promise<Result<OrderRow>> {
   return updateReturning<OrderRow>(db, TABLE, { status }, [["id", id]])
 }
@@ -86,4 +94,28 @@ export function updateOrderPaymentStatus(
   paymentStatus: string
 ): Promise<Result<OrderRow>> {
   return updateReturning<OrderRow>(db, TABLE, { payment_status: paymentStatus }, [["id", id]])
+}
+
+/**
+ * Apply everything one payment webhook changes about an order in a SINGLE row
+ * update (plan §6-S13 step 3 asks for one transaction; the PostgREST data layer
+ * has no multi-statement transaction, but a single-row update is atomic — see
+ * DECISIONS.md). Omitted fields are left untouched.
+ */
+export function applyPaymentOutcome(
+  db: Db,
+  id: string,
+  patch: {
+    status?: string
+    paymentStatus?: string
+    paymentRef?: string
+    heldFromStatus?: string | null
+  }
+): Promise<Result<OrderRow>> {
+  const values: Partial<OrderRow> = {}
+  if (patch.status !== undefined) values.status = patch.status
+  if (patch.paymentStatus !== undefined) values.payment_status = patch.paymentStatus
+  if (patch.paymentRef !== undefined) values.payment_ref = patch.paymentRef
+  if (patch.heldFromStatus !== undefined) values.held_from_status = patch.heldFromStatus
+  return updateReturning<OrderRow>(db, TABLE, values, [["id", id]])
 }

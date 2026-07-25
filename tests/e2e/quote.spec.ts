@@ -73,6 +73,9 @@ test.describe("quote (Supabase + worker)", () => {
     await page.getByRole("button", { name: "Get a quote" }).click()
     await expect(page.getByText("Total (incl. taxes where applicable)")).toBeVisible({ timeout: 60_000 })
     await expect(page.getByRole("row", { name: /Material/ })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Proceed to checkout" })).toBeDisabled()
+    await expect(page.getByRole("link", { name: "Proceed to checkout" })).toHaveAttribute(
+      "href",
+      /\/checkout\?quoteId=qt_/
+    )
   })
 })

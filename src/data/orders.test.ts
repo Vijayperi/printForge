@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  applyPaymentOutcome,
   getOrder,
+  getOrderByPaymentRef,
   getOrderByQuoteId,
   getOrderOwned,
   insertOrder,
@@ -127,6 +129,85 @@ describe("updateOrderProviderSession", () => {
 
   it("fails when the order is absent", async () => {
     const result = await updateOrderProviderSession(db(), "ord_missing", "cks_abc")
+    expect(!result.ok && result.error.code).toBe("not_found")
+  })
+})
+
+describe("getOrderByPaymentRef", () => {
+  const rows = [
+    { id: "ord_1", user_id: "u1", payment_ref: "pay_1", created_at: "1" },
+    { id: "ord_2", user_id: "u2", payment_ref: null, created_at: "2" },
+  ]
+
+  it("finds the order a payment belongs to", async () => {
+    const result = await getOrderByPaymentRef(db(rows), "pay_1")
+    expect(result.ok && result.value?.id).toBe("ord_1")
+  })
+
+  it("returns null for a payment reference we have never recorded", async () => {
+    const result = await getOrderByPaymentRef(db(rows), "pay_unknown")
+    expect(result.ok && result.value).toBeNull()
+  })
+})
+
+describe("applyPaymentOutcome", () => {
+  function orderRow() {
+    return db([
+      {
+        id: "ord_1",
+        user_id: "u1",
+        status: "pending_payment",
+        payment_status: "unpaid",
+        payment_ref: null,
+        held_from_status: null,
+        created_at: "1",
+      },
+    ])
+  }
+
+  it("writes status, payment status and payment ref in one update", async () => {
+    const fake = orderRow()
+    const result = await applyPaymentOutcome(fake, "ord_1", {
+      status: "production_queued",
+      paymentStatus: "paid",
+      paymentRef: "pay_1",
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.status).toBe("production_queued")
+      expect(result.value.payment_status).toBe("paid")
+      expect(result.value.payment_ref).toBe("pay_1")
+      expect(result.value.held_from_status).toBeNull()
+    }
+  })
+
+  it("records where a hold came from", async () => {
+    const fake = orderRow()
+    const result = await applyPaymentOutcome(fake, "ord_1", {
+      status: "on_hold",
+      heldFromStatus: "paid",
+    })
+    expect(result.ok && result.value.held_from_status).toBe("paid")
+    expect(result.ok && result.value.payment_status).toBe("unpaid")
+  })
+
+  it("clears held_from_status when passed null", async () => {
+    const fake = db([
+      { id: "ord_1", user_id: "u1", status: "on_hold", held_from_status: "paid", created_at: "1" },
+    ])
+    const result = await applyPaymentOutcome(fake, "ord_1", { heldFromStatus: null })
+    expect(result.ok && result.value.held_from_status).toBeNull()
+  })
+
+  it("leaves omitted fields untouched", async () => {
+    const fake = orderRow()
+    const result = await applyPaymentOutcome(fake, "ord_1", { paymentStatus: "refunded" })
+    expect(result.ok && result.value.status).toBe("pending_payment")
+    expect(result.ok && result.value.payment_ref).toBeNull()
+  })
+
+  it("fails when the order is absent", async () => {
+    const result = await applyPaymentOutcome(db(), "ord_missing", { status: "paid" })
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 })

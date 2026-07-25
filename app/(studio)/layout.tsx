@@ -24,6 +24,9 @@ export default async function StudioLayout({ children }: { children: React.React
             <Link href="/projects" className="text-muted-foreground hover:text-foreground">
               My projects
             </Link>
+            <Link href="/orders" className="text-muted-foreground hover:text-foreground">
+              My orders
+            </Link>
             <Link href="/profile" className="text-muted-foreground hover:text-foreground">
               {user.value.email}
             </Link>
