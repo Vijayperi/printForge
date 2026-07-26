@@ -5,8 +5,10 @@ import {
   PRINT_FAILURE_REASONS,
   PRINT_POLL_INTERVAL_MS,
   pollOutcome,
+  MILESTONE_FOR_PRINT_EVENT,
   printFailureNotificationKey,
   printJobAuditAction,
+  printMilestoneNotificationKey,
   printPollKey,
   shouldKeepPolling,
   type PollOutcome,
@@ -123,6 +125,28 @@ describe("poll and notification keys", () => {
 
   it("polls every 30 seconds, as the plan specifies", () => {
     expect(PRINT_POLL_INTERVAL_MS).toBe(30_000)
+  })
+
+  it("mails a reprint's milestones separately from the first attempt's", () => {
+    expect(printMilestoneNotificationKey("pj_1", 1, "started")).toBe(
+      "production_milestone:pj_1:1:started"
+    )
+    expect(printMilestoneNotificationKey("pj_1", 2, "started")).not.toBe(
+      printMilestoneNotificationKey("pj_1", 1, "started")
+    )
+    expect(printMilestoneNotificationKey("pj_1", 1, "completed")).not.toBe(
+      printMilestoneNotificationKey("pj_1", 1, "started")
+    )
+  })
+})
+
+describe("MILESTONE_FOR_PRINT_EVENT", () => {
+  it("announces a start and a finish to the customer", () => {
+    expect(MILESTONE_FOR_PRINT_EVENT).toEqual({ STARTED: "started", COMPLETED: "completed" })
+  })
+
+  it("has no entry for a failed print — that is an ops alert, not customer news", () => {
+    expect(Object.keys(MILESTONE_FOR_PRINT_EVENT)).not.toContain("FAILED")
   })
 })
 

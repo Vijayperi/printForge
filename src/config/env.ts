@@ -30,6 +30,10 @@ const envSchema = z
 
     EMAIL: z.enum(["mock", "resend"]).default("mock"),
     RESEND_API_KEY: z.string().min(1).optional(),
+    // Routing, not copy: which identity we send as and which inbox ops alerts
+    // land in. OWNER DECISION REQUIRED — both need a verified sending domain.
+    EMAIL_FROM: z.string().min(1).default("PrintForge <orders@printforge.example>"),
+    OPS_ALERT_EMAIL: z.email().default("ops@printforge.example"),
   })
   .superRefine((env, ctx) => {
     if (env.GENERATION_PROVIDER === "meshy" && env.MESHY_API_KEY === undefined) {
@@ -60,8 +64,23 @@ const envSchema = z
         }
       }
     }
-    if (env.EMAIL === "resend" && env.RESEND_API_KEY === undefined) {
-      ctx.addIssue({ code: "custom", path: ["RESEND_API_KEY"], message: "required when EMAIL=resend" })
+    if (env.EMAIL === "resend") {
+      if (env.RESEND_API_KEY === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["RESEND_API_KEY"],
+          message: "required when EMAIL=resend",
+        })
+      }
+      if (env.EMAIL_FROM.includes("printforge.example")) {
+        // The default is a placeholder domain no ESP will ever accept; failing
+        // at boot beats every send failing one at a time in the worker.
+        ctx.addIssue({
+          code: "custom",
+          path: ["EMAIL_FROM"],
+          message: "must be a verified sending address when EMAIL=resend",
+        })
+      }
     }
   })
 

@@ -66,12 +66,12 @@ export async function POST(
   const notified = await new PostgresJobQueue(db, new SystemClock()).enqueue({
     type: "notification.send",
     payload: {
-      template: "order_shipped",
+      template: "shipment",
       orderId: id,
       carrier: body.value.carrier,
       trackingNumber: body.value.trackingNumber,
     },
-    idempotencyKey: `order_shipped:${shipment.value.id}`,
+    idempotencyKey: `shipment:${shipment.value.id}`,
   })
   if (!notified.ok) return jsonError(notified.error)
 

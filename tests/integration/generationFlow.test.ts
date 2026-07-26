@@ -13,6 +13,7 @@ import { MockGenerationProvider } from "@/src/adapters/generation/mock"
 import type { Db } from "@/src/data/db"
 import { PostgresJobQueue } from "@/src/jobs/queue"
 import { runOnce, type WorkerDeps } from "@/src/jobs/worker"
+import { MockNotifier } from "@/src/adapters/email/mock"
 import { MockPrinterGateway } from "@/src/adapters/printerGateway/mock"
 import { InMemoryStorage } from "@/src/adapters/storage/memory"
 import { MockSlicer } from "@/src/adapters/slicer/mock"
@@ -93,6 +94,8 @@ describe.skipIf(!RUN)("generation flow (Supabase)", () => {
       converter: new MockGlbConverter(),
       slicer: new MockSlicer(storage),
       gateway: new MockPrinterGateway(),
+      notifier: new MockNotifier(),
+      opsEmail: "ops@printforge.test",
       appUrl: "http://localhost:3000",
     }
 

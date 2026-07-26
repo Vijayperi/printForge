@@ -8,6 +8,7 @@
  */
 import { getGenerationProvider } from "@/src/adapters/generation/factory"
 import { getGlbConverter } from "@/src/adapters/conversion/factory"
+import { getNotifier } from "@/src/adapters/email/factory"
 import { getPrinterGateway } from "@/src/adapters/printerGateway/factory"
 import { getSlicer } from "@/src/adapters/slicer/factory"
 import { getAssetStorage } from "@/src/adapters/storage/factory"
@@ -34,7 +35,9 @@ async function main(): Promise<void> {
     converter: getGlbConverter(),
     slicer: getSlicer(storage),
     gateway: getPrinterGateway(storage),
+    notifier: getNotifier(),
     appUrl: getEnv().APP_URL,
+    opsEmail: getEnv().OPS_ALERT_EMAIL,
   }
 
   let running = true

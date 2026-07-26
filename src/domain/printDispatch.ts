@@ -98,6 +98,35 @@ export function printFailureNotificationKey(printJobId: string, attempt: number)
   return `ops_print_failure:${printJobId}:${attempt}`
 }
 
+/** The customer-facing milestones a poll can announce (plan §6-S16 step 1). */
+export type PrintMilestone = "started" | "completed"
+
+/**
+ * The milestone each print event announces. A failed print is deliberately
+ * absent: that is an ops alert, not customer news, so the type makes it
+ * impossible to mail a customer about one.
+ */
+export const MILESTONE_FOR_PRINT_EVENT: Record<
+  Exclude<DispatchedPrintEvent, "FAILED">,
+  PrintMilestone
+> = {
+  STARTED: "started",
+  COMPLETED: "completed",
+}
+
+/**
+ * Idempotency key for a production milestone mail. Keyed by attempt as well as
+ * job, so a reprint tells the customer it started again rather than being
+ * swallowed as a duplicate of the first attempt.
+ */
+export function printMilestoneNotificationKey(
+  printJobId: string,
+  attempt: number,
+  milestone: PrintMilestone
+): string {
+  return `production_milestone:${printJobId}:${attempt}:${milestone}`
+}
+
 /** The states a poll should keep watching (anything not yet terminal). */
 export function shouldKeepPolling(status: PrintJobState): boolean {
   return !isTerminalPrintJobState(status)

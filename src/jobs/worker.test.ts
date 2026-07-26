@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from "vitest"
 
 import { MockGlbConverter } from "@/src/adapters/conversion/mock"
 import type { GenerationProvider, GenerationStatus } from "@/src/adapters/generation"
+import { MockNotifier } from "@/src/adapters/email/mock"
 import { MockPrinterGateway } from "@/src/adapters/printerGateway/mock"
 import { MockSlicer } from "@/src/adapters/slicer/mock"
 import { InMemoryStorage } from "@/src/adapters/storage/memory"
-import type { ClaimedJob, JobQueue } from "@/src/jobs/queue"
+import { JOB_TYPES, type ClaimedJob, type JobQueue, type JobType } from "@/src/jobs/queue"
 import {
   dispatch,
   HANDLED_TYPES,
@@ -57,7 +58,9 @@ function makeDeps(over: { queue?: JobQueue; provider?: GenerationProvider; rows?
     converter: new MockGlbConverter(),
     slicer: new MockSlicer(storage),
     gateway: new MockPrinterGateway(),
+    notifier: new MockNotifier(),
     appUrl: "http://localhost:3000",
+    opsEmail: "ops@printforge.test",
   }
 }
 
@@ -123,14 +126,17 @@ describe("dispatch", () => {
     expect(!result.ok && result.error.code).toBe("validation")
   })
 
-  it("claims every job type it can handle", () => {
-    expect(HANDLED_TYPES).toContain("print.dispatch")
-    expect(HANDLED_TYPES).toContain("print.poll")
-    expect(HANDLED_TYPES).not.toContain("notification.send")
+  it("routes notification.send to its handler", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "notification.send", payload: {} }))
+    expect(!result.ok && result.error.code).toBe("validation") // invalid payload reached the handler
   })
 
-  it("has no handler for unregistered job types", async () => {
-    const result = await dispatch(makeDeps(), claimed({ type: "notification.send", payload: {} }))
+  it("claims every job type it can handle", () => {
+    for (const type of JOB_TYPES) expect(HANDLED_TYPES).toContain(type)
+  })
+
+  it("has no handler for a job type outside the union", async () => {
+    const result = await dispatch(makeDeps(), claimed({ type: "order.deliver" as JobType, payload: {} }))
     expect(!result.ok && result.error.code).toBe("not_found")
   })
 })

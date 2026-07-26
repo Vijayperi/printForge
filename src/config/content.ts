@@ -395,3 +395,83 @@ export const opsContent = {
     error: "Error",
   },
 } as const
+
+export interface EmailCopy {
+  subject: string
+  heading: string
+  body: readonly string[]
+  cta: string
+}
+
+/**
+ * Transactional email copy (plan §6-S16 step 1). Customer templates carry a
+ * subject, heading and body paragraphs; an ops alert carries only a subject,
+ * because its body is whatever facts the emitting flow attached.
+ */
+export const emailContent = {
+  orderRefLabel: "Order",
+  footer: "PrintForge — printed to order in India.",
+  supportLine: "Questions? Reply to this email and a person will answer.",
+  opsCta: "Open in ops",
+  customer: {
+    order_receipt: {
+      subject: "Your PrintForge order is confirmed",
+      heading: "Thanks — we’ve got your order",
+      body: [
+        "Your payment is confirmed and your model is queued for our print check.",
+        "We’ll email you again when it goes on a machine.",
+      ],
+      cta: "View your order",
+    },
+    review_hold: {
+      subject: "Your PrintForge order is on hold",
+      heading: "We’ve paused your order",
+      body: [
+        "One of our team is taking a closer look before we print. Nothing is needed from you.",
+        "If we can’t print it as designed, we’ll refund you in full.",
+      ],
+      cta: "View your order",
+    },
+    production_milestone: {
+      started: {
+        subject: "Your PrintForge order is printing",
+        heading: "Your print has started",
+        body: ["Your model is on a machine now. We’ll tell you when it comes off the bed."],
+        cta: "View your order",
+      },
+      completed: {
+        subject: "Your PrintForge print is finished",
+        heading: "Off the printer",
+        body: [
+          "Your model has finished printing and is with our team for a quality check.",
+          "Once it passes we’ll pack it and send you tracking.",
+        ],
+        cta: "View your order",
+      },
+    },
+    shipment: {
+      subject: "Your PrintForge order has shipped",
+      heading: "On its way",
+      body: ["Your print passed its quality check and is on its way with the carrier."],
+      cta: "Track your order",
+    },
+    cancellation_refund: {
+      subject: "Your PrintForge order was cancelled",
+      heading: "We’ve cancelled this order",
+      body: [
+        "Any payment you made is being refunded to the card you paid with.",
+        "Refunds usually land within 5–7 working days.",
+      ],
+      cta: "View your order",
+    },
+  },
+  ops: {
+    ops_manual_review: "Manual review: a design needs an operator decision",
+    ops_print_failure: "Print failed on the fleet",
+    ops_order_review: "Order awaiting design review",
+    ops_payment_unmatched: "Payment received for an unknown order",
+    ops_late_payment: "Payment landed on a cancelled order",
+    ops_refund_unmatched: "Refund for a payment we have not recorded",
+    ops_dispute_opened: "Dispute opened",
+  },
+} as const

@@ -7,11 +7,14 @@ import { applyPaymentOutcome, getOrder } from "@/src/data/orders"
 import { updatePrinterState } from "@/src/data/printers"
 import { getPrintJob, updatePrintJobStatus } from "@/src/data/printJobs"
 import {
+  MILESTONE_FOR_PRINT_EVENT,
   ORDER_EVENT_FOR_PRINT_EVENT,
   pollOutcome,
   printFailureNotificationKey,
   printJobAuditAction,
+  printMilestoneNotificationKey,
   type DispatchedPrintEvent,
+  type PrintMilestone,
 } from "@/src/domain/printDispatch"
 import { orderMachine, type OrderState } from "@/src/domain/stateMachines/order"
 import { printJobMachine, type PrintJobState } from "@/src/domain/stateMachines/printJob"
@@ -114,6 +117,12 @@ async function applyPrintEvent(
   if (event === "FAILED") {
     const notified = await notifyPrintFailure(deps, job, failureReason)
     if (!notified.ok) return notified
+  } else if (order.value.moved) {
+    // Only when the order actually moved: an order an operator has held or
+    // cancelled must not receive "your print has started" because a machine
+    // finished the job that was already on it.
+    const notified = await notifyMilestone(deps, job, MILESTONE_FOR_PRINT_EVENT[event])
+    if (!notified.ok) return notified
   }
   // A finished or failed print stops the loop; the operator decides what next.
   return next.value === "printing" ? enqueuePoll(deps, job.id, poll + 1) : ok(undefined)
@@ -148,6 +157,20 @@ async function advanceOrder(
   const updated = await applyPaymentOutcome(deps.db, order.id, { status: next.value })
   if (!updated.ok) return updated
   return ok({ status: next.value, moved: true })
+}
+
+/** Tell the customer their print started or finished (plan §6-S16 step 1). */
+async function notifyMilestone(
+  deps: PrintDispatchDeps,
+  job: PrintJobRow,
+  milestone: PrintMilestone
+): Promise<Result<void>> {
+  const enqueued = await deps.queue.enqueue({
+    type: "notification.send",
+    payload: { template: "production_milestone", orderId: job.order_id, milestone },
+    idempotencyKey: printMilestoneNotificationKey(job.id, job.attempt, milestone),
+  })
+  return enqueued.ok ? ok(undefined) : enqueued
 }
 
 /** Tell ops a print failed (plan §6-S15 step 4: `ops_print_failure`). */

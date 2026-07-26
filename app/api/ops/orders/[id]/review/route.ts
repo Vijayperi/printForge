@@ -1,15 +1,34 @@
+import type { CustomerTemplateKey } from "@/src/adapters/email"
 import { getPaymentProvider } from "@/src/adapters/payments/factory"
 import { insertAuditEvent } from "@/src/data/auditEvents"
 import { applyPaymentOutcome, getOrder } from "@/src/data/orders"
 import { getServiceDb } from "@/src/data/supabaseClients"
-import { reviewRequestSchema, reviewTransition } from "@/src/domain/ops/review"
+import {
+  reviewRequestSchema,
+  reviewTransition,
+  type ReviewAction,
+} from "@/src/domain/ops/review"
 import type { OrderState } from "@/src/domain/stateMachines/order"
+import { PostgresJobQueue } from "@/src/jobs/queue"
+import { SystemClock } from "@/src/lib/clock"
 import { appError, toHttpError, type AppError } from "@/src/lib/errors"
 import { requireOperator } from "@/src/lib/opsAuth"
 
 function jsonError(error: AppError): Response {
   const { status, body } = toHttpError(error)
   return Response.json(body, { status })
+}
+
+/**
+ * What the customer hears about each review action (plan §6-S16 step 1).
+ * Approving and releasing a hold say nothing: the order simply carries on, and
+ * the next thing the customer hears is that their print has started.
+ */
+const CUSTOMER_TEMPLATE_FOR_REVIEW: Record<ReviewAction, CustomerTemplateKey | null> = {
+  approve: null,
+  release_hold: null,
+  hold: "review_hold",
+  reject: "cancellation_refund",
 }
 
 /**
@@ -90,6 +109,18 @@ export async function POST(
     },
   })
   if (!audited.ok) return jsonError(audited.error)
+
+  // Keyed by the audit event, not the order: an order can be held, released and
+  // held again, and the customer should hear about each one (plan §6-S16 step 1).
+  const template = CUSTOMER_TEMPLATE_FOR_REVIEW[action]
+  if (template !== null) {
+    const notified = await new PostgresJobQueue(db, new SystemClock()).enqueue({
+      type: "notification.send",
+      payload: { template, orderId: order.id },
+      idempotencyKey: `${template}:${audited.value.id}`,
+    })
+    if (!notified.ok) return jsonError(notified.error)
+  }
 
   return Response.json({ status: transition.value.status, refundRef }, { status: 200 })
 }

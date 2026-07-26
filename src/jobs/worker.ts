@@ -1,6 +1,7 @@
 import "server-only"
 
 import type { GlbConverter } from "@/src/adapters/conversion"
+import type { Notifier } from "@/src/adapters/email"
 import type { PrinterGateway } from "@/src/adapters/printerGateway"
 import type { Slicer } from "@/src/adapters/slicer"
 import type { AssetStorage } from "@/src/adapters/storage"
@@ -10,6 +11,7 @@ import {
   type GenerationDeps,
 } from "@/src/jobs/handlers/generation"
 import { handleAssetIngest } from "@/src/jobs/handlers/ingestion"
+import { handleNotificationSend } from "@/src/jobs/handlers/notification"
 import { handlePrintDispatch, type PrintDispatchDeps } from "@/src/jobs/handlers/printDispatch"
 import { handlePrintPoll } from "@/src/jobs/handlers/printPoll"
 import { handleSlicingRun } from "@/src/jobs/handlers/slicing"
@@ -24,7 +26,10 @@ export interface WorkerDeps extends GenerationDeps {
   converter: GlbConverter
   slicer: Slicer
   gateway: PrinterGateway
+  notifier: Notifier
   appUrl: string
+  /** Inbox for `ops_*` alerts (plan §6-S16 step 1). */
+  opsEmail: string
 }
 
 /** Job types this worker claims and can dispatch. */
@@ -36,6 +41,7 @@ export const HANDLED_TYPES: JobType[] = [
   "slicing.run",
   "print.dispatch",
   "print.poll",
+  "notification.send",
 ]
 
 const PERMANENT_CODES: ReadonlySet<ErrorCode> = new Set<ErrorCode>([
@@ -79,6 +85,11 @@ export function dispatch(deps: WorkerDeps, job: ClaimedJob): Promise<Result<void
       return handlePrintDispatch(dispatchDeps(deps), job.payload)
     case "print.poll":
       return handlePrintPoll(dispatchDeps(deps), job.payload)
+    case "notification.send":
+      return handleNotificationSend(
+        { db: deps.db, notifier: deps.notifier, appUrl: deps.appUrl, opsEmail: deps.opsEmail },
+        job.payload
+      )
     default:
       return Promise.resolve(err(appError("not_found", `no handler for job type ${job.type}`)))
   }

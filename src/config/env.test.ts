@@ -94,7 +94,24 @@ describe("loadEnv", () => {
 
   it("requires RESEND_API_KEY when EMAIL=resend", () => {
     expectInvalid({ EMAIL: "resend" }, /RESEND_API_KEY/)
-    expect(loadEnv({ EMAIL: "resend", RESEND_API_KEY: "rk" }).ok).toBe(true)
+    expect(
+      loadEnv({ EMAIL: "resend", RESEND_API_KEY: "rk", EMAIL_FROM: "PF <o@printforge.in>" }).ok
+    ).toBe(true)
+  })
+
+  it("refuses the placeholder sending address when EMAIL=resend", () => {
+    expectInvalid({ EMAIL: "resend", RESEND_API_KEY: "rk" }, /verified sending address/)
+  })
+
+  it("defaults the sending identity and the ops inbox so the app runs env-free", () => {
+    const env = loadEnv({})
+    expect(env.ok && env.value.EMAIL).toBe("mock")
+    expect(env.ok && env.value.EMAIL_FROM.length).toBeGreaterThan(0)
+    expect(env.ok && env.value.OPS_ALERT_EMAIL).toContain("@")
+  })
+
+  it("rejects an ops inbox that is not an email address", () => {
+    expectInvalid({ OPS_ALERT_EMAIL: "not-an-inbox" }, /OPS_ALERT_EMAIL/)
   })
 
   it("accepts optional Supabase values when present and valid", () => {

@@ -8,17 +8,26 @@ import { appError } from "@/src/lib/errors"
 import { newId } from "@/src/lib/ids"
 import { err, ok, type Result } from "@/src/lib/result"
 
-export type JobType =
-  | "generation.submit"
-  | "generation.poll"
-  | "asset.ingest"
-  | "validation.run"
-  | "slicing.run"
-  | "print.dispatch"
+/**
+ * Every job type the system can queue (plan §4.4). A list rather than a bare
+ * union so the worker's own test can assert it claims all of them — adding a
+ * type without a handler then fails a test instead of dead-lettering in
+ * production.
+ */
+export const JOB_TYPES = [
+  "generation.submit",
+  "generation.poll",
+  "asset.ingest",
+  "validation.run",
+  "slicing.run",
+  "print.dispatch",
   // Not in the plan's §4.4 list: the status poller needs its own type so the
   // worker can claim polls without re-running a dispatch (see DECISIONS.md).
-  | "print.poll"
-  | "notification.send"
+  "print.poll",
+  "notification.send",
+] as const
+
+export type JobType = (typeof JOB_TYPES)[number]
 
 export interface ClaimedJob {
   jobId: string

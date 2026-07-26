@@ -104,6 +104,12 @@ function pollJobs(): Record<string, unknown>[] {
   return db.rows("jobs").filter((row) => row["type"] === "print.poll")
 }
 
+function notifications(template: string): Record<string, unknown>[] {
+  return db
+    .rows("jobs")
+    .filter((row) => (row["payload"] as { template?: string }).template === template)
+}
+
 function withFleet(script: MockPrinterScript): void {
   gateway = new MockPrinterGateway({ [PRINTER]: script })
   deps = makeDeps()
@@ -187,7 +193,7 @@ describe("handlePrintPoll", () => {
       },
     })
 
-    expect(db.rows("jobs").filter((row) => row["type"] === "notification.send")).toEqual([
+    expect(notifications("ops_print_failure")).toEqual([
       expect.objectContaining({
         idempotency_key: "ops_print_failure:pj_1:1",
         payload: {
@@ -243,6 +249,24 @@ describe("handlePrintPoll", () => {
    * print's own outcome is a physical fact and must be recorded; the order must
    * stay where the operator put it.
    */
+  it("tells the customer when their print starts and when it finishes", async () => {
+    await release()
+    await handlePrintPoll(deps, { printJobId: "pj_1", poll: 1 }) // → printing
+    await handlePrintPoll(deps, { printJobId: "pj_1", poll: 2 }) // still printing
+    await handlePrintPoll(deps, { printJobId: "pj_1", poll: 3 }) // → completed
+
+    expect(notifications("production_milestone")).toEqual([
+      expect.objectContaining({
+        idempotency_key: "production_milestone:pj_1:1:started",
+        payload: { template: "production_milestone", orderId: "ord_1", milestone: "started" },
+      }),
+      expect.objectContaining({
+        idempotency_key: "production_milestone:pj_1:1:completed",
+        payload: { template: "production_milestone", orderId: "ord_1", milestone: "completed" },
+      }),
+    ])
+  })
+
   it("records the print but leaves an order an operator has moved", async () => {
     await release()
     await handlePrintPoll(deps, { printJobId: "pj_1", poll: 1 }) // → printing
@@ -261,6 +285,9 @@ describe("handlePrintPoll", () => {
       action: "print_job.completed",
       metadata: { orderStatus: "on_hold", orderStatusUnchanged: true },
     })
+    // The order did not move, so the customer is told nothing: "your print has
+    // finished" would contradict the hold an operator deliberately put on it.
+    expect(notifications("production_milestone")).toHaveLength(1)
   })
 
   const rejections = [
@@ -342,8 +369,8 @@ describe("handlePrintPoll", () => {
     await release()
     // A printing job on a machine that has just gone idle: the longest path
     // through a poll (job read, printer state, job status, order read, order
-    // write, audit event).
-    for (const call of [1, 2, 3, 4, 5, 6]) {
+    // write, audit event, the customer's milestone mail).
+    for (const call of [1, 2, 3, 4, 5, 6, 7]) {
       db = seed({
         job: { status: "printing", gateway_job_ref: "mock-gw-1" },
         order: { status: "printing" },

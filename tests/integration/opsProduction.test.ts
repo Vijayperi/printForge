@@ -195,7 +195,7 @@ describe.skipIf(!RUN)("ops production lifecycle", () => {
     const { data: jobs } = await client
       .from("jobs")
       .select("type, idempotency_key")
-      .eq("idempotency_key", `order_shipped:${shipmentId}`)
+      .eq("idempotency_key", `shipment:${shipmentId}`)
     expect(jobs).toHaveLength(1)
     expect(jobs?.[0]).toMatchObject({ type: "notification.send" })
 

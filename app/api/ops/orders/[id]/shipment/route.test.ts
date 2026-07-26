@@ -83,9 +83,9 @@ describe("POST …/shipment", () => {
     })
     expect(db.rows("jobs")[0]).toMatchObject({
       type: "notification.send",
-      idempotency_key: `order_shipped:${body.shipmentId}`,
+      idempotency_key: `shipment:${body.shipmentId}`,
       payload: {
-        template: "order_shipped",
+        template: "shipment",
         orderId: "ord_1",
         carrier: "delhivery",
         trackingNumber: "DL-99887766",

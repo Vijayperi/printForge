@@ -57,6 +57,10 @@ function audit(): Record<string, unknown> {
   return db.rows("audit_events")[0]!
 }
 
+function notifications(): Record<string, unknown>[] {
+  return db.rows("jobs").filter((row) => row["type"] === "notification.send")
+}
+
 beforeEach(() => {
   getUser.mockResolvedValue(ok(OPERATOR))
   createRefund.mockResolvedValue(ok({ refundRef: "rfnd_1" }))
@@ -156,6 +160,44 @@ describe("POST …/review — actions", () => {
   it("409s a release with no recorded origin", async () => {
     db = seed([orderRow({ status: "on_hold", held_from_status: null })])
     expect((await POST(post({ action: "release_hold", reason: "resolved" }), ctx)).status).toBe(409)
+  })
+})
+
+describe("POST …/review — what the customer is told", () => {
+  it("tells the customer their order is on hold", async () => {
+    db = seed([orderRow({ status: "printing" })])
+    await POST(post({ action: "hold", reason: "filament jam" }), ctx)
+
+    const [queued] = notifications()
+    expect(queued).toMatchObject({
+      type: "notification.send",
+      payload: { template: "review_hold", orderId: "ord_1" },
+    })
+    // Keyed by the audit event, so a hold → release → hold really does mail twice.
+    expect(queued?.idempotency_key).toBe(`review_hold:${audit().id as string}`)
+  })
+
+  it("tells the customer about a rejection and its refund", async () => {
+    await POST(post({ action: "reject", reason: "unprintable" }), ctx)
+    expect(notifications()[0]).toMatchObject({
+      payload: { template: "cancellation_refund", orderId: "ord_1" },
+    })
+  })
+
+  it.each(["approve", "release_hold"] as const)(
+    "says nothing to the customer on %s — the order simply carries on",
+    async (action) => {
+      db = seed([orderRow({ status: "on_hold", held_from_status: "production_queued" })])
+      await POST(post({ action, reason: "ok" }), ctx)
+      expect(notifications()).toHaveLength(0)
+    }
+  )
+
+  it("502s when the customer notification cannot be queued", async () => {
+    db = seed([orderRow({ status: "printing" })])
+    // 1 order read · 2 status update · 3 audit event · 4 the notification job.
+    db.failCall(4, { message: "boom" })
+    expect((await POST(post({ action: "hold", reason: "jam" }), ctx)).status).toBe(502)
   })
 })
 

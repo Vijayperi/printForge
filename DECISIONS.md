@@ -769,3 +769,50 @@ the `print.dispatch` handler, the status poller, the live release/cancel control
   passed / 2 failed (`quote.spec.ts`, `validation.spec.ts`) — both pass in isolation, the documented
   load flake. The six "(Supabase + worker)" specs also need `npm run dev:worker` running; without it
   they all fail, which is not a regression.
+
+## S16 Phase A — notifications: email adapter, templates, `notification.send`
+
+- **`TemplateKey` is widened from §4.4's seven names to twelve.** The seven are present verbatim, but
+  the flows shipped in S10/S13/S15 already enqueue five more ops alerts by name —
+  `ops_order_review`, `ops_payment_unmatched`, `ops_late_payment`, `ops_refund_unmatched`,
+  `ops_dispute_opened`. §4.4 listed only two ops keys, so the choice was to widen the union or to
+  collapse five distinct reconciliation alerts into one. Collapsing would leave an operator unable to
+  tell "a payment arrived for an order we have never seen" from "a dispute was opened", which is the
+  whole point of the alert, so the union grew to match the emitters.
+- **Customer templates are schema-validated; ops alerts render free-form facts.** A customer must
+  never receive mail with a blank where an amount should be, so each of the five customer templates
+  parses its data with zod and an invalid payload is a permanent `validation` error. Ops alerts are
+  diagnostic: they render whatever keys the emitting flow attached, sorted so the same alert always
+  renders identically. Adding a new ops alert therefore needs only a subject line in `content.ts`.
+- **The shipment route now enqueues `template: "shipment"`, not `"order_shipped"`.** §4.4 names that
+  template `shipment`; S14 invented a second name for it. The idempotency key moved with it
+  (`shipment:<shipmentId>`), which is safe because nothing had a handler for the type until now.
+- **`MockNotifier` does not write `notification_log`** — §6-S16 step 1 says it should, but §4.4's
+  `Notifier` interface has no database, and giving one implementation a repository the other lacks
+  would put the log row on a code path the real sender never takes. The handler writes the row for
+  *both* implementations instead, so the log is transport-independent and the mock keeps only its
+  in-memory outbox.
+- **Every send attempt writes a log row, successes and failures alike.** The question this table gets
+  asked is "did we ever tell this customer?", so a retry adds a second row rather than overwriting
+  the first: overwriting would erase the evidence that the first attempt failed.
+- **`EMAIL_FROM` and `OPS_ALERT_EMAIL` are env, not `content.ts`.** They are routing, not copy, and
+  they differ per environment. `EMAIL_FROM` additionally *fails at boot* when `EMAIL=resend` while it
+  still holds the placeholder `printforge.example` domain — better than every send failing one at a
+  time inside the worker.
+- **A milestone mail is sent only when the order actually moved.** A print that finishes on a machine
+  whose order an operator has since held or cancelled still records the print and its audit row, but
+  the customer hears nothing: "your print has finished" would contradict the hold. The map from print
+  event to milestone is typed `Exclude<DispatchedPrintEvent, "FAILED">`, so mailing a customer about
+  a failed print is not expressible — a failure is an ops alert.
+- **Milestone and hold mails are keyed by attempt and by audit event respectively.** A reprint really
+  should say "printing" again, and an order held → released → held should tell the customer twice, so
+  neither key is the bare order id.
+- **`JobType` is now derived from a `JOB_TYPES` list.** The worker's own test asserts it claims every
+  member, so adding a job type without a handler fails a test instead of dead-lettering in
+  production. This session added the eighth handler, `notification.send`, which had been queued but
+  unclaimed since S10.
+- **Verified:** 2734 unit tests @ 100/100/100/100, `npm run verify` green (exit 0, bundle gate
+  included); 64 live integration tests green (60 existing + 4 new in `tests/integration/
+  notifications.test.ts`, covering all five customer templates addressing the frozen contact, an ops
+  alert logged against its order but sent to the ops inbox, one log row per failed attempt, and no
+  row at all for an order that does not exist).
