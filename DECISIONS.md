@@ -816,3 +816,65 @@ the `print.dispatch` handler, the status poller, the live release/cancel control
   notifications.test.ts`, covering all five customer templates addressing the frozen contact, an ops
   alert logged against its order but sent to the ops inbox, one log row per failed attempt, and no
   row at all for an order that does not exist).
+
+## S16 Phase B — security sweep, performance, full regression, launch readiness
+
+- **The auth rate limit is keyed by account *and* by network, not by IP alone.** The plan's number
+  (10 per 15 minutes) is the right size for the limit that matters — someone guessing their way into
+  one person's account — but applying it per IP would have throttled every household, office and
+  college behind a single NAT, which is common enough in India to be disqualifying. So `auth` counts
+  per email address (lower-cased, so capitalisation cannot buy a fresh bucket) and a second, much
+  looser `authNetwork` bucket (100 per 15 minutes) bounds someone spraying one password across
+  thousands of addresses. **This was found the hard way:** the first implementation was IP-keyed, and
+  the full e2e suite — which signs up and logs in dozens of times from one address — went from 12
+  passing specs to 2. A test suite is not a user, but it demonstrated the failure mode exactly.
+- **The upload route throttles *before* it reads the body.** A flood of 50 MB uploads should be cheap
+  to refuse; parsing first and checking after would make the limiter the most expensive part of the
+  request.
+- **The payment webhook is deliberately unthrottled** and a test asserts it stays that way. Its
+  signature is the gate, and rate-limiting a payment provider's retries would drop money on the floor.
+- **`tests/unit/securityInvariants.test.ts` asserts the posture structurally**, in the spirit of the
+  existing `paymentInvariants` suite: that all three PRD-named surfaces enforce a limit, that no
+  `getSignedUrl` call site exceeds ten minutes, that `getSignedUrl` is reached only through the
+  ownership-checked asset route, that every route reading `request.formData()` also calls the upload
+  scanner, and that every secret-shaped env var is in the client-bundle grep list. **That last one
+  immediately found two gaps** — `DODO_WEBHOOK_SECRET` and `RESEND_API_KEY` were never in
+  `CLIENT_FORBIDDEN_ENV_KEYS`. They are now.
+- **`optimizeGlb` does lossless container work, not geometry compression.** §6-S16 step 3 asks for
+  meshopt/draco. Those need a mesh library and real provider output to tune against, and quantizing
+  geometry we cannot yet see the real shape of is how a viewer ends up subtly wrong. What ships is
+  the seam plus the wins available without a dependency: the JSON chunk is re-emitted minified,
+  chunks the glTF spec tells clients to ignore are dropped, and both chunks are re-padded to the spec
+  minimum. A GLB that comes out no smaller is kept as it arrived, as is one we cannot parse — the
+  model is the customer's, and a container we do not understand is our problem, not theirs. The
+  optimizer also accepts NUL-padded JSON chunks, which are not spec-conformant but are common enough
+  in the wild that refusing them would reject models every viewer opens.
+- **Thumbnail caching is capped below the signed URL's own lifetime.** `/api/assets/[id]` redirects to
+  a URL that dies in ten minutes, so telling a browser to reuse that redirect for a year would hand it
+  a link that is already dead. Thumbnails — the ones fetched repeatedly by project lists — get
+  `max-age=540, immutable`; everything else gets `no-store`. The genuinely long-lived cache belongs on
+  the storage object at the CDN edge, which is a deployment setting (LAUNCH_CHECKLIST.md §5).
+- **The landing-page budget is asserted from the prerendered HTML**, which is the same list of scripts
+  a browser would build, rather than from a Next.js internal manifest. `npm run check:budget` (a new
+  step in `verify`) fails the build if the landing route's initial JavaScript exceeds 800 KiB raw or
+  contains any three.js marker. **A full Lighthouse run is not in CI:** it needs a deployed URL and a
+  real device profile, and scoring a local dev server is famously noisy — it would be a flaky gate,
+  not a useful one. It is a launch step instead; what CI enforces is the thing that *decides* the
+  score for this page.
+- **CI is now two jobs.** `verify` (types, lint, coverage, build, both artifact gates) needs no
+  database and fails in seconds. `database-tests` boots the Supabase CLI, applies migrations, runs the
+  integration tier, starts the worker and runs the **whole** e2e suite with `E2E_SUPABASE=1` — before
+  this, CI ran the e2e suite with no database, so ten of thirteen specs silently skipped.
+- **Playwright runs with one worker on CI.** The suite's long-documented flakiness is load-induced —
+  parallel specs starve the single dev server and one times out, and *which* one varies. The runner
+  that has to be trusted runs them serially, with `retries: 2` and a trace on the first retry.
+- **`tests/e2e/exceptions.spec.ts`** adds the two §6-S16 step 4 journeys nothing covered: manual
+  review → operator reject → refund (asserting the payment axis does *not* move, because only the
+  refund webhook may move it), and a dispute freezing an order mid-production via a genuinely signed
+  mock webhook posted byte-for-byte at the real route. **Quote expiry is not an e2e spec:** driving it
+  would need a test-only clock hook in production code, and the behaviour is already covered against
+  the real database in the integration tier — a seam punched through the app to make a test easier is
+  a worse trade than a test one tier down.
+- **Verified:** 2819 unit tests @ 100/100/100/100, `npm run verify` green (exit 0, both artifact gates
+  included); 64 live integration tests green; full serial e2e **21 passed / 1 failed**, the failure
+  being `quote.spec.ts` — the documented load flake, confirmed passing in isolation immediately after.

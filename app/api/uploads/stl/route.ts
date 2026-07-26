@@ -14,13 +14,16 @@ import { parseStl } from "@/src/domain/geometry/stlParse"
 import { PostgresJobQueue } from "@/src/jobs/queue"
 import { SystemClock } from "@/src/lib/clock"
 import { appError, toHttpError, type AppError } from "@/src/lib/errors"
+import { enforceRateLimit } from "@/src/lib/rateLimit"
 import { err, ok, type Result } from "@/src/lib/result"
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
-function jsonError(error: AppError): Response {
+function jsonError(error: AppError, headers?: HeadersInit): Response {
   const { status, body } = toHttpError(error)
-  return Response.json(body, { status })
+  return headers === undefined
+    ? Response.json(body, { status })
+    : Response.json(body, { status, headers })
 }
 
 interface UploadedFile {
@@ -78,6 +81,17 @@ export async function POST(request: Request): Promise<Response> {
   if (!user.ok || user.value === null) return jsonError(appError("unauthorized", "sign in required"))
   const userId = user.value.userId
 
+  // Before reading the body: an upload flood should be cheap to refuse, not
+  // cost us a 50 MB parse per request (plan §6-S16 step 2).
+  const serviceDb = getServiceDb()
+  const rate = await enforceRateLimit(serviceDb, new SystemClock(), "upload", userId)
+  if (!rate.ok) return jsonError(rate.error)
+  if (!rate.value.allowed) {
+    return jsonError(appError("rate_limited", "Too many uploads. Please wait and try again."), {
+      "Retry-After": String(rate.value.retryAfterSeconds),
+    })
+  }
+
   let form: FormData
   try {
     form = await request.formData()
@@ -112,7 +126,7 @@ export async function POST(request: Request): Promise<Response> {
   const thumbnail = await getGlbConverter().toThumbnail(glb.value)
   if (!thumbnail.ok) return jsonError(thumbnail.error)
 
-  const db = getServiceDb()
+  const db = serviceDb
   const storage = getAssetStorage()
 
   const version = await nextVersionNo(db, projectId)

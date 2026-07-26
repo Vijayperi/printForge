@@ -10,6 +10,24 @@ import { createFakeDb, FakeDb } from "@/tests/helpers/fakeDb"
 
 const GLB = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 1, 2, 3, 4])
 
+/** A real GLB with pretty-printed JSON, so the optimizer has something to save. */
+function shrinkableGlb(): Uint8Array {
+  const json = new TextEncoder().encode(
+    JSON.stringify({ asset: { version: "2.0" }, scenes: [{ nodes: [0] }] }, null, 4)
+  )
+  const pad = (4 - (json.byteLength % 4)) % 4
+  const out = new Uint8Array(12 + 8 + json.byteLength + pad)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, 0x46546c67, true)
+  view.setUint32(4, 2, true)
+  view.setUint32(8, out.byteLength, true)
+  view.setUint32(12, json.byteLength + pad, true)
+  view.setUint32(16, 0x4e4f534a, true)
+  out.set(json, 20)
+  out.fill(0x20, 20 + json.byteLength)
+  return out
+}
+
 function storageStub(over: Partial<AssetStorage> = {}): AssetStorage {
   return {
     ingestFromUrl:
@@ -117,6 +135,57 @@ describe("handleAssetIngest", () => {
     expect(dv["glb_asset_id"]).not.toBeNull()
     expect(dv["stl_asset_id"]).not.toBeNull()
     expect(dv["thumbnail_asset_id"]).not.toBeNull()
+  })
+
+  it("stores a shrunk copy of the GLB for the viewer to download", async () => {
+    const source = shrinkableGlb()
+    let stored: Uint8Array | null = null
+    const storage = storageStub({
+      read: async () => ok(source),
+      // Distinct keys per mime: the optimized GLB and the derived STL now share
+      // a key prefix, and the assets table treats storage_key as unique.
+      put: async (bytes, o) => {
+        if (o.mime === "model/gltf-binary") stored = bytes
+        return ok({
+          storageKey: `${o.keyPrefix}/${o.mime.replace("/", "-")}`,
+          checksumSha256: `c-${o.mime}`,
+          bytes: bytes.byteLength,
+          mime: o.mime,
+        })
+      },
+    })
+    const { deps, db } = makeDeps([dvRow()], storage)
+
+    expect((await handleAssetIngest(deps, payload)).ok).toBe(true)
+    expect(stored).not.toBeNull()
+    expect((stored as unknown as Uint8Array).byteLength).toBeLessThan(source.byteLength)
+
+    // Exactly one GLB asset row, and it is the optimized one.
+    const glbAssets = db.rows("assets").filter((a) => a["type"] === "model_glb")
+    expect(glbAssets).toHaveLength(1)
+    expect(glbAssets[0]?.["bytes"]).toBe((stored as unknown as Uint8Array).byteLength)
+  })
+
+  it("keeps a GLB it cannot parse exactly as it arrived", async () => {
+    const { deps, db } = makeDeps([dvRow()])
+    expect((await handleAssetIngest(deps, payload)).ok).toBe(true)
+
+    // GLB is 8 bytes of nonsense; the ingested asset row is kept verbatim.
+    const glbAsset = db.rows("assets").find((a) => a["type"] === "model_glb")
+    expect(glbAsset?.["storage_key"]).toBe("models/dv_1/glb")
+    expect(glbAsset?.["checksum_sha256"]).toBe("aaa")
+  })
+
+  it("propagates a failure storing the optimized GLB", async () => {
+    const storage = storageStub({
+      read: async () => ok(shrinkableGlb()),
+      put: async (_bytes, o) =>
+        o.mime === "model/gltf-binary"
+          ? err(appError("provider_error", "put boom"))
+          : ok({ storageKey: `${o.keyPrefix}/${o.mime}`, checksumSha256: "b", bytes: 1, mime: o.mime }),
+    })
+    const { deps } = makeDeps([dvRow()], storage)
+    expect((await handleAssetIngest(deps, payload)).ok).toBe(false)
   })
 
   it("resolves a relative glbUrl against APP_URL for real ingestion", async () => {

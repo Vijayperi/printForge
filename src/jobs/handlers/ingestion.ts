@@ -3,7 +3,8 @@ import "server-only"
 import { z } from "zod"
 
 import type { GlbConverter } from "@/src/adapters/conversion"
-import type { AssetStorage } from "@/src/adapters/storage"
+import { optimizeGlb } from "@/src/adapters/conversion/optimizeGlb"
+import type { AssetStorage, StoredAsset } from "@/src/adapters/storage"
 import { insertAsset } from "@/src/data/assets"
 import { attachAssets, getDesignVersion } from "@/src/data/designVersions"
 import type { Db } from "@/src/data/db"
@@ -52,6 +53,42 @@ async function storeDerived(
 }
 
 /**
+ * Store the copy the viewer will download, shrunk when we can shrink it
+ * (plan §6-S16 step 3).
+ *
+ * A GLB the optimizer cannot parse, or cannot improve, is kept exactly as it
+ * arrived: the model is the customer's, and a container we do not understand is
+ * our problem, not theirs.
+ */
+async function storeViewerGlb(
+  deps: IngestionDeps,
+  dvId: string,
+  ingested: StoredAsset,
+  bytes: Uint8Array
+): Promise<Result<{ assetId: string; bytes: Uint8Array }>> {
+  const optimized = optimizeGlb(bytes)
+  if (optimized.ok && optimized.value.optimizedBytes < optimized.value.originalBytes) {
+    const stored = await storeDerived(
+      deps,
+      `models/${dvId}`,
+      optimized.value.bytes,
+      "model/gltf-binary",
+      "model_glb"
+    )
+    return stored.ok ? ok({ assetId: stored.value, bytes: optimized.value.bytes }) : stored
+  }
+
+  const asset = await insertAsset(deps.db, {
+    type: "model_glb",
+    storageKey: ingested.storageKey,
+    checksumSha256: ingested.checksumSha256,
+    bytes: ingested.bytes,
+    mime: ingested.mime,
+  })
+  return asset.ok ? ok({ assetId: asset.value.id, bytes }) : asset
+}
+
+/**
  * asset.ingest: copy the provider GLB into private storage, derive an STL and a
  * thumbnail, and attach all three to the (already ready) design version. The
  * provider URL is never persisted — only storage keys. Idempotent.
@@ -74,30 +111,26 @@ export async function handleAssetIngest(deps: IngestionDeps, rawPayload: unknown
     maxBytes: MAX_GLB_BYTES,
   })
   if (!ingest.ok) return ingest
-  const glbAsset = await insertAsset(deps.db, {
-    type: "model_glb",
-    storageKey: ingest.value.storageKey,
-    checksumSha256: ingest.value.checksumSha256,
-    bytes: ingest.value.bytes,
-    mime: ingest.value.mime,
-  })
-  if (!glbAsset.ok) return glbAsset
 
-  const glbBytes = await deps.storage.read(ingest.value.storageKey)
-  if (!glbBytes.ok) return glbBytes
+  const ingested = await deps.storage.read(ingest.value.storageKey)
+  if (!ingested.ok) return ingested
 
-  const stl = await deps.converter.toStl(glbBytes.value)
+  const viewerGlb = await storeViewerGlb(deps, dvId, ingest.value, ingested.value)
+  if (!viewerGlb.ok) return viewerGlb
+  const glbBytes = viewerGlb.value.bytes
+
+  const stl = await deps.converter.toStl(glbBytes)
   if (!stl.ok) return stl
   const stlAssetId = await storeDerived(deps, `models/${dvId}`, stl.value, "model/stl", "model_stl")
   if (!stlAssetId.ok) return stlAssetId
 
-  const thumbnail = await deps.converter.toThumbnail(glbBytes.value)
+  const thumbnail = await deps.converter.toThumbnail(glbBytes)
   if (!thumbnail.ok) return thumbnail
   const thumbnailAssetId = await storeDerived(deps, `thumbnails/${dvId}`, thumbnail.value, "image/png", "thumbnail")
   if (!thumbnailAssetId.ok) return thumbnailAssetId
 
   const attach = await attachAssets(deps.db, dvId, {
-    glbAssetId: glbAsset.value.id,
+    glbAssetId: viewerGlb.value.assetId,
     stlAssetId: stlAssetId.value,
     thumbnailAssetId: thumbnailAssetId.value,
   })

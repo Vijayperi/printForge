@@ -7,10 +7,7 @@ import { getRequestDb } from "@/src/data/supabaseClients"
 import { SystemClock } from "@/src/lib/clock"
 import { appError, toHttpError, type AppError } from "@/src/lib/errors"
 import { newId } from "@/src/lib/ids"
-import { checkRateLimit } from "@/src/lib/rateLimit"
-
-const GENERATION_WINDOW_SECONDS = 3600
-const GENERATION_LIMIT = 5
+import { enforceRateLimit } from "@/src/lib/rateLimit"
 
 function jsonError(error: AppError, headers?: HeadersInit): Response {
   const { status, body } = toHttpError(error)
@@ -53,11 +50,7 @@ export async function POST(
   // A flagged prompt is still allowed but marked so ops can review it (S14).
   const flagged = moderation.value.verdict === "flag"
 
-  const rate = await checkRateLimit(db, new SystemClock(), {
-    key: `generation:${userId}`,
-    windowSeconds: GENERATION_WINDOW_SECONDS,
-    limit: GENERATION_LIMIT,
-  })
+  const rate = await enforceRateLimit(db, new SystemClock(), "generation", userId)
   if (!rate.ok) return jsonError(rate.error)
   if (!rate.value.allowed) {
     return jsonError(appError("rate_limited", "Too many generations. Please wait and try again."), {

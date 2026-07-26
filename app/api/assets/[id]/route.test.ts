@@ -15,7 +15,7 @@ vi.mock("@/src/data/supabaseClients", () => ({
 const getSignedUrl = vi.fn()
 vi.mock("@/src/adapters/storage/factory", () => ({ getAssetStorage: vi.fn(() => ({ getSignedUrl })) }))
 
-import { GET } from "@/app/api/assets/[id]/route"
+import { cacheControlFor, GET } from "@/app/api/assets/[id]/route"
 
 const USER = { userId: "u1", email: "a@b.com", name: "A", role: "customer" as const }
 const ctx = { params: Promise.resolve({ id: "ast_1" }) }
@@ -74,6 +74,33 @@ describe("GET asset", () => {
     expect(res.headers.get("location")).toBe("https://storage.test/signed-url")
     expect(getSignedUrl).toHaveBeenCalledWith("models/dv_1/ast_1", 600)
   })
+
+  it("lets a browser reuse a thumbnail redirect, but not a model one", async () => {
+    expect((await GET(req, ctx)).headers.get("cache-control")).toBe("private, no-store")
+
+    db = createFakeDb({
+      design_versions: { rows: [{ id: "dv_1", project_id: "proj_1", thumbnail_asset_id: "ast_1" }] },
+      assets: { rows: [{ id: "ast_1", type: "thumbnail", storage_key: "thumbnails/dv_1/ast_1" }] },
+    })
+    expect((await GET(req, ctx)).headers.get("cache-control")).toBe(
+      "private, max-age=540, immutable"
+    )
+  })
+})
+
+describe("cacheControlFor", () => {
+  it("never lets a cached redirect outlive the signed URL it points at", () => {
+    const maxAge = Number(/max-age=(\d+)/.exec(cacheControlFor("thumbnail"))?.[1] ?? "0")
+    expect(maxAge).toBeGreaterThan(0)
+    expect(maxAge).toBeLessThan(600)
+  })
+
+  it.each(["model_glb", "model_stl", "gcode", "reference_image"])(
+    "refuses to cache a %s redirect",
+    (assetType) => {
+      expect(cacheControlFor(assetType)).toBe("private, no-store")
+    }
+  )
 })
 
 describe("FakeDb import guard", () => {

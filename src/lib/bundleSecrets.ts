@@ -9,11 +9,17 @@
  * through a prop). A hit fails the build.
  */
 
-/** Credentials that may only ever exist on the server. */
+/**
+ * Credentials that may only ever exist on the server. Kept in step with
+ * `src/config/env.ts` by `tests/unit/securityInvariants.test.ts`, which fails if
+ * a new secret-shaped env var is declared without being guarded here.
+ */
 export const CLIENT_FORBIDDEN_ENV_KEYS = [
   "PRINTER_GATEWAY_CONFIG",
   "DODO_API_KEY",
+  "DODO_WEBHOOK_SECRET",
   "MESHY_API_KEY",
+  "RESEND_API_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
 ] as const
 

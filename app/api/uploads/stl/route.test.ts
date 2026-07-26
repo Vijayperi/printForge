@@ -62,6 +62,7 @@ beforeEach(() => {
     assets: { rows: [], unique: ["id", "storage_key"] },
     jobs: { rows: [], unique: ["id", "idempotency_key"] },
   })
+  db.onRpc("bump_rate_limit", () => ({ data: [{ allowed: true, retry_after: 0 }], error: null }))
 })
 
 afterEach(() => vi.clearAllMocks())
@@ -99,6 +100,23 @@ describe("POST /api/uploads/stl", () => {
     expect((await POST(upload(validStl(), "model.stl", null))).status).toBe(400)
   })
 
+  it("429 with Retry-After when the uploader is over their hourly limit", async () => {
+    db.onRpc("bump_rate_limit", () => ({
+      data: [{ allowed: false, retry_after: 1800 }],
+      error: null,
+    }))
+    const res = await POST(upload(validStl()))
+    expect(res.status).toBe(429)
+    expect(res.headers.get("Retry-After")).toBe("1800")
+    // Refused before the body was read: a flood must not cost us a 50 MB parse.
+    expect(scan).not.toHaveBeenCalled()
+  })
+
+  it("502 when the rate limiter itself errors", async () => {
+    db.onRpc("bump_rate_limit", () => ({ data: null, error: { message: "rl down" } }))
+    expect((await POST(upload(validStl()))).status).toBe(502)
+  })
+
   it("400 for a non-stl file", async () => {
     expect((await POST(upload(validStl(), "model.txt"))).status).toBe(400)
   })
@@ -119,11 +137,13 @@ describe("POST /api/uploads/stl", () => {
 
   it("404 when the project is not owned", async () => {
     db = createFakeDb({ projects: { rows: [] } })
+    db.onRpc("bump_rate_limit", () => ({ data: [{ allowed: true, retry_after: 0 }], error: null }))
     expect((await POST(upload(validStl()))).status).toBe(404)
   })
 
   it("502 when the ownership lookup errors", async () => {
-    db.failNext({ message: "db down" })
+    // Call 2, not 1: the rate-limit bump goes first on every request.
+    db.failCall(2, { message: "db down" })
     expect((await POST(upload(validStl()))).status).toBe(502)
   })
 
@@ -142,14 +162,16 @@ describe("POST /api/uploads/stl", () => {
     expect((await POST(upload(validStl()))).status).toBe(502)
   })
 
+  // Call 1 is the rate-limit bump, which every request now makes before it
+  // reads the body; the ownership lookup and everything after it shift by one.
   it.each([
-    ["version lookup", 2],
-    ["design version insert", 3],
-    ["stl asset insert", 4],
-    ["glb asset insert", 5],
-    ["thumbnail asset insert", 6],
-    ["attach", 7],
-    ["validation enqueue", 8],
+    ["version lookup", 3],
+    ["design version insert", 4],
+    ["stl asset insert", 5],
+    ["glb asset insert", 6],
+    ["thumbnail asset insert", 7],
+    ["attach", 8],
+    ["validation enqueue", 9],
   ])("502 when the %s db op fails", async (_label, callIndex) => {
     db.failCall(callIndex, { message: "db op boom" })
     expect((await POST(upload(validStl()))).status).toBe(502)

@@ -7,6 +7,25 @@ import { getAuthGateway } from "@/src/adapters/auth/factory"
 
 const SIGNED_URL_TTL_SECONDS = 600
 
+/**
+ * How long a browser may reuse this redirect (plan §6-S16 step 3).
+ *
+ * Capped below the signed URL's own lifetime with a minute to spare: caching the
+ * redirect for longer than the URL it points at would hand a client a link that
+ * is already dead. Asset bytes are immutable — storage keys are checksum-derived
+ * and a new upload is a new asset — so `immutable` is honest here. The genuinely
+ * long-lived cache belongs on the storage object at the CDN edge, which is an
+ * owner-era deployment setting (see LAUNCH_CHECKLIST.md).
+ */
+const THUMBNAIL_CACHE_SECONDS = SIGNED_URL_TTL_SECONDS - 60
+
+/** Thumbnails are fetched repeatedly by project lists; models are fetched once. */
+export function cacheControlFor(assetType: string): string {
+  return assetType === "thumbnail"
+    ? `private, max-age=${THUMBNAIL_CACHE_SECONDS}, immutable`
+    : "private, no-store"
+}
+
 function jsonError(error: AppError): Response {
   const { status, body } = toHttpError(error)
   return Response.json(body, { status })
@@ -41,5 +60,9 @@ export async function GET(
   const signed = await getAssetStorage().getSignedUrl(asset.value.storage_key, SIGNED_URL_TTL_SECONDS)
   if (!signed.ok) return jsonError(signed.error)
 
-  return Response.redirect(signed.value, 302)
+  // Not `Response.redirect`, which does not take headers.
+  return new Response(null, {
+    status: 302,
+    headers: { Location: signed.value, "Cache-Control": cacheControlFor(asset.value.type) },
+  })
 }

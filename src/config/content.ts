@@ -396,6 +396,11 @@ export const opsContent = {
   },
 } as const
 
+/** Auth copy that is decided by the server, not the form (plan §6-S16 step 2). */
+export const authContent = {
+  rateLimited: "Too many attempts from this network. Please wait a few minutes and try again.",
+} as const
+
 export interface EmailCopy {
   subject: string
   heading: string
