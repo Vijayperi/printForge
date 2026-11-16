@@ -1,0 +1,8 @@
+{
+  "id": "018a210d-8ba4-705c-b111-1f1776f7f578",
+  "status": "FAILED",
+  "progress": 0,
+  "model_urls": {},
+  "task_error": { "message": "generation failed: unsafe prompt" },
+  "type": "text-to-3d-preview"
+}

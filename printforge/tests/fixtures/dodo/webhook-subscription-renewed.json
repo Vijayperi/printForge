@@ -1,0 +1,10 @@
+{
+  "business_id": "biz_mock",
+  "type": "subscription.renewed",
+  "timestamp": "2026-07-26T09:00:00Z",
+  "data": {
+    "payload_type": "Subscription",
+    "subscription_id": "sub_1AbC",
+    "status": "active"
+  }
+}

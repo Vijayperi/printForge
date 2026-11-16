@@ -1,0 +1,64 @@
+{
+  "total": {
+    "amountMinor": 67596,
+    "currency": "INR"
+  },
+  "lines": [
+    {
+      "key": "material",
+      "label": "Material",
+      "amount": {
+        "amountMinor": 20000,
+        "currency": "INR"
+      }
+    },
+    {
+      "key": "machine_time",
+      "label": "Machine time",
+      "amount": {
+        "amountMinor": 18000,
+        "currency": "INR"
+      }
+    },
+    {
+      "key": "supports",
+      "label": "Supports",
+      "amount": {
+        "amountMinor": 5700,
+        "currency": "INR"
+      }
+    },
+    {
+      "key": "labor",
+      "label": "Labour",
+      "amount": {
+        "amountMinor": 5000,
+        "currency": "INR"
+      }
+    },
+    {
+      "key": "failure_allowance",
+      "label": "Reprint allowance",
+      "amount": {
+        "amountMinor": 3896,
+        "currency": "INR"
+      }
+    },
+    {
+      "key": "shipping",
+      "label": "Shipping",
+      "amount": {
+        "amountMinor": 15000,
+        "currency": "INR"
+      }
+    },
+    {
+      "key": "tax",
+      "label": "GST",
+      "amount": {
+        "amountMinor": 0,
+        "currency": "INR"
+      }
+    }
+  ]
+}

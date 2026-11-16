@@ -1,0 +1,21 @@
+{
+  "business_id": "biz_mock",
+  "type": "payment.failed",
+  "timestamp": "2026-07-25T10:12:00Z",
+  "data": {
+    "payload_type": "Payment",
+    "payment_id": "pay_8Jw3nQx1Ab",
+    "business_id": "biz_mock",
+    "brand_id": "brd_mock",
+    "status": "failed",
+    "total_amount": 24360,
+    "currency": "INR",
+    "created_at": "2026-07-25T10:11:55Z",
+    "error_code": "card_declined",
+    "error_message": "The card issuer declined the payment.",
+    "metadata": {
+      "order_id": "ord_01JZ0000000000000000000000",
+      "quote_id": "qt_01JZ0000000000000000000000"
+    }
+  }
+}

@@ -1,0 +1,175 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderTemplate > renders cancellation_refund to a stable customer mail 1`] = `
+{
+  "html": "<h1>We’ve cancelled this order</h1><p>Any payment you made is being refunded to the card you paid with.</p><p>Refunds usually land within 5–7 working days.</p><table role="presentation"><tr><th align="left">Order</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">Refund</th><td>₹2,499.00</td></tr></table><p><a href="https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001">View your order</a></p><p>Questions? Reply to this email and a person will answer.</p><p>PrintForge — printed to order in India.</p>",
+  "subject": "Your PrintForge order was cancelled (ord_01K0SNAPSHOT00000000000001)",
+  "text": "We’ve cancelled this order
+
+Any payment you made is being refunded to the card you paid with.
+Refunds usually land within 5–7 working days.
+
+Order: ord_01K0SNAPSHOT00000000000001
+Refund: ₹2,499.00
+
+View your order: https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001
+
+Questions? Reply to this email and a person will answer.
+PrintForge — printed to order in India.",
+}
+`;
+
+exports[`renderTemplate > renders ops_dispute_opened to a stable ops alert 1`] = `
+{
+  "html": "<h1>Dispute opened</h1><table role="presentation"><tr><th align="left">heldFrom</th><td>production_queued</td></tr><tr><th align="left">orderId</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">paymentRef</th><td>pay_1</td></tr></table>",
+  "subject": "Dispute opened",
+  "text": "Dispute opened
+
+heldFrom: production_queued
+orderId: ord_01K0SNAPSHOT00000000000001
+paymentRef: pay_1",
+}
+`;
+
+exports[`renderTemplate > renders ops_late_payment to a stable ops alert 1`] = `
+{
+  "html": "<h1>Payment landed on a cancelled order</h1><table role="presentation"><tr><th align="left">amountMinor</th><td>249900</td></tr><tr><th align="left">orderId</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">paymentRef</th><td>pay_1</td></tr></table>",
+  "subject": "Payment landed on a cancelled order",
+  "text": "Payment landed on a cancelled order
+
+amountMinor: 249900
+orderId: ord_01K0SNAPSHOT00000000000001
+paymentRef: pay_1",
+}
+`;
+
+exports[`renderTemplate > renders ops_manual_review to a stable ops alert 1`] = `
+{
+  "html": "<h1>Manual review: a design needs an operator decision</h1><table role="presentation"><tr><th align="left">designVersionId</th><td>dv_1</td></tr><tr><th align="left">validationReportId</th><td>vr_1</td></tr></table>",
+  "subject": "Manual review: a design needs an operator decision",
+  "text": "Manual review: a design needs an operator decision
+
+designVersionId: dv_1
+validationReportId: vr_1",
+}
+`;
+
+exports[`renderTemplate > renders ops_order_review to a stable ops alert 1`] = `
+{
+  "html": "<h1>Order awaiting design review</h1><table role="presentation"><tr><th align="left">orderId</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">verdict</th><td>manual_review</td></tr></table>",
+  "subject": "Order awaiting design review",
+  "text": "Order awaiting design review
+
+orderId: ord_01K0SNAPSHOT00000000000001
+verdict: manual_review",
+}
+`;
+
+exports[`renderTemplate > renders ops_payment_unmatched to a stable ops alert 1`] = `
+{
+  "html": "<h1>Payment received for an unknown order</h1><table role="presentation"><tr><th align="left">amountMinor</th><td>249900</td></tr><tr><th align="left">paymentRef</th><td>pay_1</td></tr></table>",
+  "subject": "Payment received for an unknown order",
+  "text": "Payment received for an unknown order
+
+amountMinor: 249900
+paymentRef: pay_1",
+}
+`;
+
+exports[`renderTemplate > renders ops_print_failure to a stable ops alert 1`] = `
+{
+  "html": "<h1>Print failed on the fleet</h1><table role="presentation"><tr><th align="left">attempt</th><td>2</td></tr><tr><th align="left">failureReason</th><td>thermal runaway</td></tr><tr><th align="left">orderId</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">printJobId</th><td>pj_1</td></tr><tr><th align="left">printerId</th><td>prn_1</td></tr></table>",
+  "subject": "Print failed on the fleet",
+  "text": "Print failed on the fleet
+
+attempt: 2
+failureReason: thermal runaway
+orderId: ord_01K0SNAPSHOT00000000000001
+printJobId: pj_1
+printerId: prn_1",
+}
+`;
+
+exports[`renderTemplate > renders ops_refund_unmatched to a stable ops alert 1`] = `
+{
+  "html": "<h1>Refund for a payment we have not recorded</h1><table role="presentation"><tr><th align="left">amountMinor</th><td>100000</td></tr><tr><th align="left">paymentRef</th><td>pay_1</td></tr></table>",
+  "subject": "Refund for a payment we have not recorded",
+  "text": "Refund for a payment we have not recorded
+
+amountMinor: 100000
+paymentRef: pay_1",
+}
+`;
+
+exports[`renderTemplate > renders order_receipt to a stable customer mail 1`] = `
+{
+  "html": "<h1>Thanks — we’ve got your order</h1><p>Your payment is confirmed and your model is queued for our print check.</p><p>We’ll email you again when it goes on a machine.</p><table role="presentation"><tr><th align="left">Order</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">Total paid</th><td>₹2,499.00</td></tr></table><p><a href="https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001">View your order</a></p><p>Questions? Reply to this email and a person will answer.</p><p>PrintForge — printed to order in India.</p>",
+  "subject": "Your PrintForge order is confirmed (ord_01K0SNAPSHOT00000000000001)",
+  "text": "Thanks — we’ve got your order
+
+Your payment is confirmed and your model is queued for our print check.
+We’ll email you again when it goes on a machine.
+
+Order: ord_01K0SNAPSHOT00000000000001
+Total paid: ₹2,499.00
+
+View your order: https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001
+
+Questions? Reply to this email and a person will answer.
+PrintForge — printed to order in India.",
+}
+`;
+
+exports[`renderTemplate > renders production_milestone to a stable customer mail 1`] = `
+{
+  "html": "<h1>Your print has started</h1><p>Your model is on a machine now. We’ll tell you when it comes off the bed.</p><table role="presentation"><tr><th align="left">Order</th><td>ord_01K0SNAPSHOT00000000000001</td></tr></table><p><a href="https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001">View your order</a></p><p>Questions? Reply to this email and a person will answer.</p><p>PrintForge — printed to order in India.</p>",
+  "subject": "Your PrintForge order is printing (ord_01K0SNAPSHOT00000000000001)",
+  "text": "Your print has started
+
+Your model is on a machine now. We’ll tell you when it comes off the bed.
+
+Order: ord_01K0SNAPSHOT00000000000001
+
+View your order: https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001
+
+Questions? Reply to this email and a person will answer.
+PrintForge — printed to order in India.",
+}
+`;
+
+exports[`renderTemplate > renders review_hold to a stable customer mail 1`] = `
+{
+  "html": "<h1>We’ve paused your order</h1><p>One of our team is taking a closer look before we print. Nothing is needed from you.</p><p>If we can’t print it as designed, we’ll refund you in full.</p><table role="presentation"><tr><th align="left">Order</th><td>ord_01K0SNAPSHOT00000000000001</td></tr></table><p><a href="https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001">View your order</a></p><p>Questions? Reply to this email and a person will answer.</p><p>PrintForge — printed to order in India.</p>",
+  "subject": "Your PrintForge order is on hold (ord_01K0SNAPSHOT00000000000001)",
+  "text": "We’ve paused your order
+
+One of our team is taking a closer look before we print. Nothing is needed from you.
+If we can’t print it as designed, we’ll refund you in full.
+
+Order: ord_01K0SNAPSHOT00000000000001
+
+View your order: https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001
+
+Questions? Reply to this email and a person will answer.
+PrintForge — printed to order in India.",
+}
+`;
+
+exports[`renderTemplate > renders shipment to a stable customer mail 1`] = `
+{
+  "html": "<h1>On its way</h1><p>Your print passed its quality check and is on its way with the carrier.</p><table role="presentation"><tr><th align="left">Order</th><td>ord_01K0SNAPSHOT00000000000001</td></tr><tr><th align="left">Carrier</th><td>Delhivery</td></tr><tr><th align="left">Tracking number</th><td>DL123456789IN</td></tr></table><p><a href="https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001">Track your order</a></p><p>Questions? Reply to this email and a person will answer.</p><p>PrintForge — printed to order in India.</p>",
+  "subject": "Your PrintForge order has shipped (ord_01K0SNAPSHOT00000000000001)",
+  "text": "On its way
+
+Your print passed its quality check and is on its way with the carrier.
+
+Order: ord_01K0SNAPSHOT00000000000001
+Carrier: Delhivery
+Tracking number: DL123456789IN
+
+Track your order: https://printforge.test/orders/ord_01K0SNAPSHOT00000000000001
+
+Questions? Reply to this email and a person will answer.
+PrintForge — printed to order in India.",
+}
+`;
